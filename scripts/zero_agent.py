@@ -35,7 +35,7 @@ import torch
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import parse_env_cfg
 
-import blank_rl_lab.tasks  # noqa: F401
+import learn_issacsim.tasks  # noqa: F401
 
 
 def main():
@@ -57,7 +57,7 @@ def main():
         # run everything in inference mode
         with torch.inference_mode():
             # compute zero actions
-            actions = torch.zeros(env.action_space.shape, device=env.unwrapped.device)
+            actions = torch.zeros(env.action_space.shape, device=env.unwrapped.device) # type:ignore
             # apply actions
             env.step(actions)
 

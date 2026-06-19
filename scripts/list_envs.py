@@ -9,7 +9,7 @@ Script to print all the available environments in Isaac Lab.
 The script iterates over all registered environments and stores the details in a table.
 It prints the name of the environment, the entry point and the config file.
 
-All the environments are registered in the `blank_rl_lab` extension. They start
+All the environments are registered in the `learn_issacsim` extension. They start
 with `Isaac` in their name.
 """
 
@@ -35,11 +35,11 @@ simulation_app = app_launcher.app
 import gymnasium as gym
 from prettytable import PrettyTable
 
-import blank_rl_lab.tasks  # noqa: F401
+import learn_issacsim.tasks  # noqa: F401
 
 
 def main():
-    """Print all environments registered in `blank_rl_lab` extension."""
+    """Print all environments registered in `learn_issacsim` extension."""
     # print all the available environments
     table = PrettyTable(["S. No.", "Task Name", "Entry Point", "Config"])
     table.title = "Available Environments in Isaac Lab"
