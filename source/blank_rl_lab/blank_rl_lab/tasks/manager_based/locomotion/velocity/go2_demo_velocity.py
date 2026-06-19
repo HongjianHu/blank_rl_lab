@@ -17,10 +17,10 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
-import isaaclab.envs.mdp as mdp
 
-from learn_issacsim.assets.robot.unitree import UNITREE_GO2_CFG as RobotCFG
- 
+from blank_rl_lab.assets.robot.unitree import UNITREE_GO2_CFG as RobotCFG
+from blank_rl_lab.tasks.manager_based.locomotion.velocity import mdp
+
 @configclass
 class MySceneCfg(InteractiveSceneCfg):
     """Configuration for the terrain scene with a legged robot."""
@@ -121,7 +121,7 @@ class ActionsCfg:
 class CommandsCfg:
     """Command specifications for the MDP."""
 
-    base_velocity = mdp.UniformVelocityCommandCfg(
+    base_velocity = mdp.UniformLevelVelocityCommandCfg(
         asset_name="robot",
         resampling_time_range=(10.0, 10.0),
         rel_standing_envs=0.02,
@@ -132,16 +132,78 @@ class CommandsCfg:
         ranges=mdp.UniformVelocityCommandCfg.Ranges(
             lin_vel_x=(-1.0, 1.0), lin_vel_y=(-1.0, 1.0), ang_vel_z=(-1.0, 1.0), heading=(-math.pi, math.pi)
         ),
+        limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
+            lin_vel_x=(-0.5, 1.0), lin_vel_y=(-0.3, 0.3), ang_vel_z=(-0.2, 0.2)
+        ),
     )
 
 @configclass
 class RewardsCfg:
-    track_lin_vel_xy_exp = RewTerm(
+    track_lin_vel_xy = RewTerm(
         func=mdp.track_lin_vel_xy_exp, weight=1.0, params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
     )
-    track_ang_vel_z_exp = RewTerm(
+    track_ang_vel_z= RewTerm(
         func=mdp.track_ang_vel_z_exp, weight=0.5, params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
     )
+    base_linear_velocity = RewTerm(
+        func = mdp.lin_vel_z_l2, weight=-0.05
+    )
+    base_angular_velocity = RewTerm(
+        func=mdp.ang_vel_xy_l2, weight=-0.001
+    )
+    flat_orientation_l2 = RewTerm(
+        func=mdp.flat_orientation_l2, weight=-5.0
+    )
+    joint_torques = RewTerm(
+        func=mdp.joint_torques_l2, weight=1e-4
+    )
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2, weight=1e-4
+    )
+    joint_acc = RewTerm(
+        func=mdp.joint_acc_l2, weight=-2.5e-7
+    )
+    action_rate = RewTerm(
+        func=mdp.action_rate_l2, weight=6.25e-3
+    )
+    feet_slip = RewTerm(
+        func=mdp.feet_slip,
+        weight=-0.04,
+        params= {
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+        },
+    )
+    dof_pos_limits = RewTerm(
+        func=mdp.joint_pos_limits,
+        weight=-10.0
+    )
+    undesired_contacts = RewTerm(
+        func=mdp.undesired_contacts,
+        weight=-5.0,
+        params={
+            "threshold": 1,
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["Head_.*", ".*_hip", ".*_thigh", ".*_calf"]),
+        },
+    )
+    energy_new_actual = RewTerm(
+        func=mdp.energy_new_actual,
+        weight=0.8,
+        params={
+                "asset_cfg": SceneEntityCfg("robot"),
+
+                "sigma_lin": 1000.0,
+                "sigma_ang": 500.0,
+                "clip_lin": 0.2,
+                "clip_ang": 0.2,
+            },
+    )   
+    
+@configclass
+class CurriculumCfg:
+    """Curriculum terms for the MDP."""
+
+    lin_vel_cmd_levels = CurrTerm(func=mdp.lin_vel_cmd_levels) # type: ignore
 
 @configclass
 class TerminationsCfg:
@@ -187,7 +249,7 @@ class GO2RobotDemoEnvCfg(ManagerBasedRLEnvCfg):
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
     events: EventCfg = EventCfg()
-    # curriculum: CurriculumCfg = CurriculumCfg()
+    curriculum: CurriculumCfg = CurriculumCfg()
 
     def __post_init__(self):
         """Post initialization."""

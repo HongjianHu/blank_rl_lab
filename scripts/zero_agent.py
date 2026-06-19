@@ -35,7 +35,7 @@ import torch
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import parse_env_cfg
 
-import learn_issacsim.tasks  # noqa: F401
+import blank_rl_lab.tasks  # noqa: F401
 
 
 def main():

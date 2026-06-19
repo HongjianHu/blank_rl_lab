@@ -3,7 +3,7 @@ from . import agents
 
 gym.register(
     id="Go2-velocity-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point=f"{__name__}.aer_env:AERManagerBasedRLEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.go2_demo_velocity:GO2RobotDemoEnvCfg",
