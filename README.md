@@ -16,50 +16,47 @@ It allows you to develop in an isolated environment, outside of the core Isaac L
 
 - Install Isaac Lab by following the [installation guide](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html).
   We recommend using the conda or uv installation as it simplifies calling Python scripts from the terminal.
-
 - Clone or copy this project/repository separately from the Isaac Lab installation (i.e. outside the `IsaacLab` directory):
-
 - Using a python interpreter that has Isaac Lab installed, install the library in editable mode using:
 
-    ```bash
-    # use 'PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-    python -m pip install -e source/learn_issacsim
+  ```bash
+  # use 'PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
+  python -m pip install -e source/blank_rl_lab
 
+  ```
 - Verify that the extension is correctly installed by:
 
-    - Listing the available tasks:
+  - Listing the available tasks:
 
-        Note: It the task name changes, it may be necessary to update the search pattern `"Template-"`
-        (in the `scripts/list_envs.py` file) so that it can be listed.
+    Note: It the task name changes, it may be necessary to update the search pattern `"Template-"`
+    (in the `scripts/list_envs.py` file) so that it can be listed.
 
-        ```bash
-        # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-        python scripts/list_envs.py
-        ```
+    ```bash
+    # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
+    python scripts/list_envs.py
+    ```
+  - Running a task:
 
-    - Running a task:
+    ```bash
+    # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
+    python scripts/<RL_LIBRARY>/train.py --task=<TASK_NAME>
+    ```
+  - Running a task with dummy agents:
 
-        ```bash
-        # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-        python scripts/<RL_LIBRARY>/train.py --task=<TASK_NAME>
-        ```
+    These include dummy agents that output zero or random agents. They are useful to ensure that the environments are configured correctly.
 
-    - Running a task with dummy agents:
+    - Zero-action agent
 
-        These include dummy agents that output zero or random agents. They are useful to ensure that the environments are configured correctly.
+      ```bash
+      # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
+      python scripts/zero_agent.py --task=<TASK_NAME>
+      ```
+    - Random-action agent
 
-        - Zero-action agent
-
-            ```bash
-            # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-            python scripts/zero_agent.py --task=<TASK_NAME>
-            ```
-        - Random-action agent
-
-            ```bash
-            # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-            python scripts/random_agent.py --task=<TASK_NAME>
-            ```
+      ```bash
+      # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
+      python scripts/random_agent.py --task=<TASK_NAME>
+      ```
 
 ### Set up IDE (Optional)
 
@@ -79,15 +76,16 @@ We provide an example UI extension that will load upon enabling your extension d
 To enable your extension, follow these steps:
 
 1. **Add the search path of this project/repository** to the extension manager:
-    - Navigate to the extension manager using `Window` -> `Extensions`.
-    - Click on the **Hamburger Icon**, then go to `Settings`.
-    - In the `Extension Search Paths`, enter the absolute path to the `source` directory of this project/repository.
-    - If not already present, in the `Extension Search Paths`, enter the path that leads to Isaac Lab's extension directory directory (`IsaacLab/source`)
-    - Click on the **Hamburger Icon**, then click `Refresh`.
 
+   - Navigate to the extension manager using `Window` -> `Extensions`.
+   - Click on the **Hamburger Icon**, then go to `Settings`.
+   - In the `Extension Search Paths`, enter the absolute path to the `source` directory of this project/repository.
+   - If not already present, in the `Extension Search Paths`, enter the path that leads to Isaac Lab's extension directory directory (`IsaacLab/source`)
+   - Click on the **Hamburger Icon**, then click `Refresh`.
 2. **Search and enable your extension**:
-    - Find your extension under the `Third Party` category.
-    - Toggle it to enable your extension.
+
+   - Find your extension under the `Third Party` category.
+   - Toggle it to enable your extension.
 
 ## Code formatting
 

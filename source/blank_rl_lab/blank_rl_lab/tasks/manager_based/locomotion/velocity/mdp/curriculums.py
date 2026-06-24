@@ -1,11 +1,24 @@
 from __future__ import annotations
 
-import torch
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+import torch
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
+
+def force_level(
+    env: ManagerBasedRLEnv,
+    env_ids: torch.Tensor,
+    reward_term_name: str
+):
+    force_command = env.command_manager.get_term("force_command")
+    episode_sums = env.reward_manager._episode_sums[reward_term_name]
+    reward_term_cfg = env.reward_manager.get_term_cfg(reward_term_name)
+    if torch.mean(episode_sums[env_ids]) / env.max_episode_length_s > 0.6 * reward_term_cfg.weight:
+        force_command._command[env_ids, 0] = (force_command._command[env_ids, 0] - 10.0).clamp(min=0.0)
+    return torch.mean(torch.squeeze(force_command.command))
 
 
 def lin_vel_cmd_levels(
@@ -15,7 +28,6 @@ def lin_vel_cmd_levels(
 ) -> torch.Tensor:
     command_term = env.command_manager.get_term("base_velocity")
     ranges = command_term.cfg.ranges
-
     limit_ranges = command_term.cfg.limit_ranges
 
     reward_term = env.reward_manager.get_term_cfg(reward_term_name)

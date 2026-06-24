@@ -1,0 +1,25 @@
+# Copyright (c) 2021-2026, ETH Zurich and NVIDIA CORPORATION
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+"""Extensions for the learning algorithms."""
+
+from .rnd import RandomNetworkDistillation, resolve_rnd_config
+from .symmetry import Symmetry, resolve_symmetry_config
+from .amp import AMPDiscriminator, resolve_amp_config
+from .actor_critic import ActorCritic
+from .actor_critic_cnn import ActorCriticCNN
+from .actor_critic_recurrent import ActorCriticRecurrent
+
+__all__ = [
+    "ActorCritic",
+    "ActorCriticCNN",
+    "ActorCriticRecurrent",
+    "RandomNetworkDistillation",
+    "Symmetry",
+    "resolve_rnd_config",
+    "resolve_symmetry_config",
+    "AMPDiscriminator",
+    "resolve_amp_config"
+]

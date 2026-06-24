@@ -45,7 +45,7 @@ class AERManagerBasedRLEnv(ManagerBasedRLEnv):
         self.termination_manager = TerminationManager(self.cfg.terminations, self)
         print("[INFO] Termination Manager: ", self.termination_manager)
         # -- reward manager
-        self.reward_manager = RewardManager(self.cfg.rewards, self)
+        self.reward_manager = AERRewardManager(self.cfg.rewards, self)
         print("[INFO] Reward Manager: ", self.reward_manager)
         # -- curriculum manager
         self.curriculum_manager = CurriculumManager(self.cfg.curriculum, self)
