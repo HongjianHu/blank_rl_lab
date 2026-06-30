@@ -11,6 +11,8 @@ from .amp import AMPDiscriminator, resolve_amp_config
 from .actor_critic import ActorCritic
 from .actor_critic_cnn import ActorCriticCNN
 from .actor_critic_recurrent import ActorCriticRecurrent
+from .student_teacher_recurrent import StudentTeacherRecurrent
+from .student_teacher import StudentTeacher
 
 __all__ = [
     "ActorCritic",
@@ -21,5 +23,6 @@ __all__ = [
     "resolve_rnd_config",
     "resolve_symmetry_config",
     "AMPDiscriminator",
-    "resolve_amp_config"
+    "resolve_amp_config",
+    "StudentTeacherRecurrent",
 ]

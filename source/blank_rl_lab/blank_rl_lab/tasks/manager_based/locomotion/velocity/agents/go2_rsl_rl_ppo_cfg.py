@@ -1,7 +1,7 @@
 from isaaclab.utils import configclass
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
 
-from legged_lab.rsl_rl import RslRlPpoAmpAlgorithmCfg, RslRlAmpCfg, RslRlPpoActorCriticConv2dCfg
+from blank_rl_lab.rsl_rl import RslRlPpoAmpAlgorithmCfg, RslRlAmpCfg
 
 @configclass
 class Go2RslRlOnPolicyRunnerAmpCfg(RslRlOnPolicyRunnerCfg):
@@ -16,17 +16,6 @@ class Go2RslRlOnPolicyRunnerAmpCfg(RslRlOnPolicyRunnerCfg):
         "discriminator": ["disc"],
         "discriminator_demonstration": ["disc_demo"]
     }
-    # policy = RslRlPpoActorCriticRecurrentCfg(
-    #     init_noise_std=1.0,
-    #     actor_hidden_dims=[512, 256, 128],
-    #     critic_hidden_dims=[512, 256, 128],
-    #     actor_obs_normalization=False,
-    #     critic_obs_normalization=False,
-    #     activation="elu",
-    #     rnn_type="lstm",
-    #     rnn_hidden_dim=64,
-    #     rnn_num_layers=1
-    # )
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
         actor_hidden_dims=[512, 256, 128],

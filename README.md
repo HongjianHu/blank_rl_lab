@@ -131,3 +131,7 @@ Some examples of packages that can likely be excluded are:
 "<path-to-isaac-sim>/extscache/omni.services.*"     // Services tools
 ...
 ```
+
+## Acknowledgments
+
+Thanks to [legged_lab](https://github.com/zitongbai/legged_lab) and its author for the valuable reference and inspiration.

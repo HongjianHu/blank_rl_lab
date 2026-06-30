@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import torch
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import SceneEntityCfg, ActionManager
 from isaaclab.assets import Articulation
 
 if TYPE_CHECKING:
@@ -75,3 +75,43 @@ def feet_slip(env, sensor_cfg, asset_cfg=SceneEntityCfg("robot")):
     contacts = contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
     feet_vel_xy = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2]
     return torch.sum(contacts * torch.sum(torch.square(feet_vel_xy), dim=-1), dim=1)
+
+def action_smoothness_second_order(
+    env: ManagerBasedRLEnv,
+    action_name: str = "joint_pos",  # action term name，按你的env配置修改
+) -> torch.Tensor:
+    """
+    Second-order action smoothness penalty.
+
+    Penalizes the second-order finite difference of actions:
+        penalty = |a_t - 2 * a_{t-1} + a_{t-2}|^2
+
+    Requires the action history of at least 2 previous steps.
+    Uses env.action_manager to access current and previous actions.
+    """
+    action_manager = cast(ActionManager, env.action_manager)
+
+    # 当前 action: a_t
+    action_t = action_manager.action  # shape: (num_envs, action_dim)
+
+    # 上一步 action: a_{t-1}
+    action_t1 = action_manager.prev_action  # shape: (num_envs, action_dim)
+
+    # 上上步 action: a_{t-2}
+    # IsaacLab 默认只缓存一步 prev_action，需要自行维护 a_{t-2}
+    if not hasattr(env, "_action_t2"):
+        # 初始化时用 a_{t-1} 填充，避免第一步产生过大惩罚
+        setattr(env, "_action_t2", action_t1.clone())
+
+    action_t2 = getattr(env, "_action_t2")  # shape: (num_envs, action_dim)
+
+    # 计算二阶差分
+    second_order_diff = action_t - 2.0 * action_t1 + action_t2  # (num_envs, action_dim)
+
+    # 更新 buffer：将 a_{t-1} 存为下一步的 a_{t-2}
+    setattr(env, "_action_t2", action_t1.clone())
+
+    # 返回每个 env 的惩罚标量（对 action_dim 求和）
+    penalty = torch.sum(second_order_diff ** 2, dim=-1)  # shape: (num_envs,)
+
+    return penalty

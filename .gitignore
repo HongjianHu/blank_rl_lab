@@ -77,3 +77,5 @@ tests/
 **/gelsight_r15_data/*
 
 source/blank_rl_lab/blank_rl_lab/datasets
+
+**/checkpoints/*

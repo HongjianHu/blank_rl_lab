@@ -191,13 +191,7 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg("robot"),
             "sensor_cfg": SceneEntityCfg("height_scanner"),
         },
-    ) 
-    
-    # action_smoothness_second_order = RewTerm(
-    #     func=mdp.action_smoothness_second_order,
-    #     weight=-0.1,
-    #     params={"action_name": "joint_pos"}, 
-    # ) 
+    )  
     
 @configclass
 class CurriculumCfg:

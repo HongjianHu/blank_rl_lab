@@ -42,7 +42,7 @@ class AMPRunner(OnPolicyRunner):
             gpu_world_size=self.gpu_world_size,
             gpu_global_rank=self.gpu_global_rank,
             device=self.device,
-            max_episode_length_s=(self.env.max_episode_length*self.env.unwrapped.step_dt),
+            max_episode_length_s=(self.env.max_episode_length*self.env.unwrapped.step_dt), # type: ignore
         )
 
     def learn(self, num_learning_iterations: int, init_at_random_ep_len: bool = False) -> None:
@@ -109,7 +109,7 @@ class AMPRunner(OnPolicyRunner):
                 loss_dict=loss_dict,
                 learning_rate=self.alg.learning_rate,
                 action_std=self.alg.policy.action_std,
-                rnd_weight=self.alg.rnd.weight if self.alg_cfg["rnd_cfg"] else None,
+                rnd_weight=self.alg.rnd.weight if self.alg_cfg["rnd_cfg"] else None, # type: ignore
             )
             
             # Save model
@@ -130,7 +130,7 @@ class AMPRunner(OnPolicyRunner):
         }
         # Save RND model if used
         if self.alg_cfg["rnd_cfg"]:
-            saved_dict["rnd_state_dict"] = self.alg.rnd.state_dict()
+            saved_dict["rnd_state_dict"] = self.alg.rnd.state_dict() # type: ignore
             if self.alg.rnd_optimizer:
                 saved_dict["rnd_optimizer_state_dict"] = self.alg.rnd_optimizer.state_dict()
         # Save AMP model
@@ -148,7 +148,7 @@ class AMPRunner(OnPolicyRunner):
         resumed_training = self.alg.policy.load_state_dict(loaded_dict["model_state_dict"])
         # Load RND model if used
         if self.alg_cfg["rnd_cfg"]:
-            self.alg.rnd.load_state_dict(loaded_dict["rnd_state_dict"])
+            self.alg.rnd.load_state_dict(loaded_dict["rnd_state_dict"]) # type: ignore
         # Load AMP model
         self.alg.amp_discriminator.load_state_dict(loaded_dict["amp_discriminator_state_dict"])
         self.alg.amp_discriminator.disc_obs_normalizer.load_state_dict(loaded_dict["amp_discriminator_normalizer_state_dict"])
@@ -158,7 +158,7 @@ class AMPRunner(OnPolicyRunner):
             self.alg.optimizer.load_state_dict(loaded_dict["optimizer_state_dict"])
             # RND optimizer if used
             if self.alg_cfg["rnd_cfg"]:
-                self.alg.rnd_optimizer.load_state_dict(loaded_dict["rnd_optimizer_state_dict"])
+                self.alg.rnd_optimizer.load_state_dict(loaded_dict["rnd_optimizer_state_dict"]) # type: ignore
             # AMP discriminator optimizer
             self.alg.disc_optimizer.load_state_dict(loaded_dict["amp_discriminator_optimizer_state_dict"])
         # Load current learning iteration
