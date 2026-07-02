@@ -60,7 +60,7 @@ class Distillation:
         self.policy = policy.to(self.device)
 
         # Create the optimizer
-        self.optimizer = resolve_optimizer(optimizer)(self.student.parameters(), lr=learning_rate)  # type: ignore
+        self.optimizer = resolve_optimizer(optimizer)(self.policy.parameters(), lr=learning_rate)  # type: ignore
 
         # Add storage
         self.storage = storage

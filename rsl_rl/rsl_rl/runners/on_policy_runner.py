@@ -153,7 +153,7 @@ class OnPolicyRunner:
         # Upload model to external logging services
         self.logger.save_model(path, self.current_learning_iteration)
 
-    def load(self, path: str, load_optimizer: bool = True, map_location: str | None = None) -> dict:
+    def load(self, path: str, load_optimizer: bool = False, map_location: str | None = None) -> dict:
         loaded_dict = torch.load(path, weights_only=False, map_location=map_location)
         # Load model
         resumed_training = self.alg.policy.load_state_dict(loaded_dict["model_state_dict"])

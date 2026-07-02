@@ -157,6 +157,14 @@ class StudentTeacherRecurrent(nn.Module):
                 obs = self.memory_t(obs).squeeze(0)
             return self.teacher(obs)
 
+    def get_student_obs(self, obs: TensorDict) -> torch.Tensor:
+        obs_list = [obs[obs_group] for obs_group in self.obs_groups["policy"]]
+        return torch.cat(obs_list, dim=-1)
+
+    def get_teacher_obs(self, obs: TensorDict) -> torch.Tensor:
+        obs_list = [obs[obs_group] for obs_group in self.obs_groups["teacher"]]
+        return torch.cat(obs_list, dim=-1)
+
     def get_hidden_states(self) -> tuple[HiddenState, HiddenState]:
         if self.teacher_recurrent:
             return self.memory_s.hidden_state, self.memory_t.hidden_state # type: ignore

@@ -125,9 +125,11 @@ class ActorCritic(nn.Module):
             # Compute mean and standard deviation
             mean_and_std = self.actor(obs)
             if self.noise_std_type == "scalar":
-                mean, std = torch.unbind(mean_and_std, dim=-2)
+                mean, raw_std = torch.unbind(mean_and_std, dim=-2)
+                std = torch.nn.functional.softplus(raw_std)
             elif self.noise_std_type == "log":
                 mean, log_std = torch.unbind(mean_and_std, dim=-2)
+                log_std = torch.clamp(log_std, min=-20.0, max=2.0)
                 std = torch.exp(log_std)
             else:
                 raise ValueError(f"Unknown standard deviation type: {self.noise_std_type}. Should be 'scalar' or 'log'")

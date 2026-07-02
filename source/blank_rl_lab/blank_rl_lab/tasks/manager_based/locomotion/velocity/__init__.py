@@ -22,6 +22,16 @@ gym.register(
 )
 
 gym.register(
+    id="Go2-ts-velocity-v0",
+    entry_point=f"{__name__}.aer_go2_env:AERManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.go2_teacher_student_cfg:GO2RobotTsEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.go2_ts_rsl_rl:Go2FlatDistillRunnerCfg",
+    },
+)
+
+gym.register(
     id="Go2-AMP-velocity-v0",
     entry_point=f"{__name__}.amp_go2_velocity:AMPManagerBasedRLEnv",
     disable_env_checker=True,

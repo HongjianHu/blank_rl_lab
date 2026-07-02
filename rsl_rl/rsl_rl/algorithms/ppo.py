@@ -74,7 +74,7 @@ class PPO:
             # Extract parameters used in ppo
             rnd_lr = rnd_cfg.pop("learning_rate", 1e-3)            
             # RND extension
-            self.rnd = RandomNetworkDistillation(device=self.device, **rnd_cfg) if rnd_cfg else None
+            self.rnd = RandomNetworkDistillation(device=self.device, **rnd_cfg)
             # Create RND optimizer
             params = self.rnd.predictor.parameters() # type:ignore  MLP
             self.rnd_optimizer = optim.Adam(params, lr=rnd_lr)
@@ -241,10 +241,6 @@ class PPO:
             # Check if we should normalize advantages per mini-batch
             if self.normalize_advantage_per_mini_batch:
                 with torch.no_grad():
-                    batch.advantages = (batch.advantages - batch.advantages.mean()) / (batch.advantages.std() + 1e-8)  # type: ignore
-
-            if self.normalize_advantage_per_mini_batch:
-                with torch.no_grad():
                     advantages_batch = (advantages_batch - advantages_batch.mean()) / (advantages_batch.std() + 1e-8)
 
             # Perform symmetric augmentation if enabled
@@ -315,13 +311,6 @@ class PPO:
             )
             surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
 
-            # Surrogate loss
-            ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
-            surrogate = -torch.squeeze(advantages_batch) * ratio # loss最小化损失，所以添加符号
-            surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(
-                ratio, 1.0 - self.clip_param, 1.0 + self.clip_param
-            )
-            surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
             # Value function loss
             if self.use_clipped_value_loss:
                 value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(
@@ -377,7 +366,7 @@ class PPO:
             loss.backward()
             # Compute the gradients for RND
             if self.rnd:
-                self.rnd.optimizer.zero_grad()
+                self.rnd_optimizer.zero_grad() # type:ignore
                 rnd_loss.backward() # type:ignore
 
             # Collect gradients from all GPUs
@@ -389,7 +378,7 @@ class PPO:
             self.optimizer.step()
             # Apply the gradients for RND
             if self.rnd:
-                self.rnd.optimizer.step()
+                self.rnd_optimizer.step() #type:ignore
 
             # Store the losses
             mean_value_loss += value_loss.item()
@@ -540,7 +529,7 @@ class PPO:
         # Load the model parameters on all GPUs from source GPU
         self.policy.load_state_dict(model_params[0])
         if self.rnd:
-            self.rnd.predictor.load_state_dict(model_params[2])
+            self.rnd.predictor.load_state_dict(model_params[1])
 
     def reduce_parameters(self) -> None:
         """Collect gradients from all GPUs and average them.

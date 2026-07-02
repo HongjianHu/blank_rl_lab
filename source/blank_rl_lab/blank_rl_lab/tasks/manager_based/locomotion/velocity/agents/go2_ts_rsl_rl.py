@@ -5,9 +5,11 @@ from blank_rl_lab.rsl_rl import RslRlStudentTeacherCfg, RslRlTsDistillationAlgor
 @configclass
 class Go2FlatDistillRunnerCfg(RslRlDistillRunnerCfg):
     num_steps_per_env = 24
-    max_iterations = 50000
+    max_iterations = 20000
     save_interval = 200
-    experiment_name = "go2_ts"
+    experiment_name = "go2_demo"
+    load_run = "rough_resume"
+    load_checkpoint = "model_8998.pt"
     obs_groups = {
         "policy": ["policy"], 
         "teacher": ["critic"], 

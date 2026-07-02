@@ -16,10 +16,11 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     experiment_name = "go2_demo"
     obs_groups = {
         "policy": ["policy"],
-        "critic": ["policy"],
+        "critic": ["critic"],
     }
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
+        noise_std_type="scalar",
         actor_obs_normalization=False,
         critic_obs_normalization=False,
         actor_hidden_dims=[512, 256, 128],
@@ -33,7 +34,7 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         entropy_coef=0.01,
         num_learning_epochs=5,
         num_mini_batches=4,
-        learning_rate=1.0e-3,
+        learning_rate=1e-3,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,
