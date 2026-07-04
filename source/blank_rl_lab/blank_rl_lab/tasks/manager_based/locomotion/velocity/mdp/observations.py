@@ -13,8 +13,8 @@ from isaaclab.sensors import Camera, Imu, RayCaster, RayCasterCamera, TiledCamer
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv, ManagerBasedRLEnv
-    from legged_lab.envs import ManagerBasedAnimationEnv
-    from legged_lab.managers import AnimationTerm
+    from blank_rl_lab.envs import ManagerBasedAnimationEnv
+    from blank_rl_lab.managers import AnimationTerm
     
 
 def root_rot_tan_norm(
@@ -53,6 +53,38 @@ def key_body_pos_b(
     )
     
     return key_body_pos_b.reshape(num_envs, -1)
+
+
+def root_height(
+    env: ManagerBasedEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Root height relative to the environment origin, matching Go2 AMP ``z_pos``."""
+    robot: Articulation = env.scene[asset_cfg.name]
+    return robot.data.root_pos_w[:, 2:3] - env.scene.env_origins[:, 2:3]
+
+
+def amp_observation(
+    env: ManagerBasedEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=MISSING, preserve_order=True), # type:ignore
+) -> torch.Tensor:
+    """Current 43-D Go2 AMP observation.
+
+    Matches ``go2_amp.py::get_amp_observations()``:
+    joint_pos(12), foot_pos_b(12), base_lin_vel_b(3), base_ang_vel_b(3),
+    joint_vel(12), root_z(1).
+    """
+    robot: Articulation = env.scene[asset_cfg.name]
+    return torch.cat(
+        (
+            robot.data.joint_pos,
+            key_body_pos_b(env, asset_cfg),
+            robot.data.root_lin_vel_b,
+            robot.data.root_ang_vel_b,
+            robot.data.joint_vel,
+            root_height(env, SceneEntityCfg(asset_cfg.name)),
+        ),
+        dim=-1,
+    )
 
 
 def ref_root_pos_error(
@@ -140,6 +172,25 @@ def ref_root_ang_vel_b(
         return ref_root_ang_vel.reshape(num_envs, -1)
     else:
         return ref_root_ang_vel
+
+
+def ref_root_lin_vel_b(
+    env: ManagerBasedAnimationEnv,
+    animation: str,
+    flatten_steps_dim: bool = True,
+) -> torch.Tensor:
+
+    animation_term: AnimationTerm = env.animation_manager.get_term(animation)
+    num_envs = env.num_envs
+
+    ref_root_vel_w = animation_term.get_root_vel_w()
+    ref_root_quat = animation_term.get_root_quat()
+    ref_root_vel_b = math_utils.quat_apply_inverse(ref_root_quat, ref_root_vel_w)
+
+    if flatten_steps_dim:
+        return ref_root_vel_b.reshape(num_envs, -1)
+    else:
+        return ref_root_vel_b
     
 
 def ref_joint_pos(
@@ -189,6 +240,58 @@ def ref_key_body_pos_b(
         num_steps = ref_key_body_pos_b.shape[1]
         return ref_key_body_pos_b.reshape(num_envs, num_steps, -1)
 
+
+def ref_root_height(
+    env: ManagerBasedAnimationEnv,
+    animation: str,
+    flatten_steps_dim: bool = True,
+) -> torch.Tensor:
+
+    animation_term: AnimationTerm = env.animation_manager.get_term(animation)
+    num_envs = env.num_envs
+    ref_root_z = animation_term.get_root_pos_w()[..., 2:3]
+
+    if flatten_steps_dim:
+        return ref_root_z.reshape(num_envs, -1)
+    else:
+        return ref_root_z
+
+
+def ref_amp_observation(
+    env: ManagerBasedAnimationEnv,
+    animation: str,
+    flatten_steps_dim: bool = True,
+) -> torch.Tensor:
+    """Reference 43-D Go2 AMP observation sequence from the motion data."""
+    animation_term: AnimationTerm = env.animation_manager.get_term(animation)
+    num_envs = env.num_envs
+
+    ref_dof_pos = animation_term.get_dof_pos()
+    ref_key_body_pos_b = animation_term.get_key_body_pos_b()
+    num_steps = ref_dof_pos.shape[1]
+    ref_key_body_pos_b = ref_key_body_pos_b.reshape(num_envs, num_steps, -1)
+    ref_root_vel_b = ref_root_lin_vel_b(env, animation, flatten_steps_dim=False)
+    ref_root_ang_vel_obs = ref_root_ang_vel_b(env, animation, flatten_steps_dim=False)
+    ref_dof_vel = animation_term.get_dof_vel()
+    ref_root_z = animation_term.get_root_pos_w()[..., 2:3]
+
+    obs = torch.cat(
+        (
+            ref_dof_pos,
+            ref_key_body_pos_b,
+            ref_root_vel_b,
+            ref_root_ang_vel_obs,
+            ref_dof_vel,
+            ref_root_z,
+        ),
+        dim=-1,
+    )
+
+    if flatten_steps_dim:
+        return obs.reshape(num_envs, -1)
+    else:
+        return obs
+
 def root_local_rot_tan_norm(
     env: ManagerBasedEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
 ) -> torch.Tensor:
@@ -232,8 +335,6 @@ def ref_root_local_rot_tan_norm(
         return obs.reshape(num_envs, -1)
     else:
         return obs
-
-
 
 
 

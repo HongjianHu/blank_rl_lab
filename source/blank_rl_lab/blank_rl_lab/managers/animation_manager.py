@@ -54,7 +54,7 @@ class AnimationTerm(ManagerTermBase):
                 "AnimationTerm requires env.motion_data_manager to be created "
                 "before env.animation_manager."
             )
-        self.motion_data_term: MotionDataTerm = env.motion_data_manager.get_term(
+        self.motion_data_term: MotionDataTerm = env.motion_data_manager.get_term( # type:ignore
             cfg.motion_data_term
         )
 
@@ -139,10 +139,10 @@ class AnimationTerm(ManagerTermBase):
         """
         if env_ids is None or len(env_ids) == 0:
             return
-        env_ids = self._to_env_ids_tensor(env_ids)
+        env_ids = self._to_env_ids_tensor(env_ids) # type:ignore
 
         # -- 采样运动 ID --
-        self.motion_ids[env_ids] = self.motion_data_term.sample_motions(len(env_ids))
+        self.motion_ids[env_ids] = self.motion_data_term.sample_motions(len(env_ids)) # type:ignore
         self.motion_durations[env_ids] = self.motion_data_term.get_motion_durations(
             self.motion_ids[env_ids]
         )
@@ -159,7 +159,7 @@ class AnimationTerm(ManagerTermBase):
                     self.motion_ids[env_ids], truncate_time_start=truncate_time
                 )
         else:
-            anchor_time = torch.zeros(len(env_ids), device=self._env.device)
+            anchor_time = torch.zeros(len(env_ids), device=self._env.device) # type:ignore
 
         self.motion_fetch_time[env_ids, :] = (
             anchor_time.unsqueeze(-1)
@@ -168,7 +168,7 @@ class AnimationTerm(ManagerTermBase):
 
         # -- 拉取数据并写入 sim --
         self._fetch_motion_data(env_ids)
-        self._apply_to_sim(env_ids)
+        self._apply_to_sim(env_ids) # type:ignore
 
     def update(self, dt: float) -> None:
         """每步调用 (仅在 random_fetch 或 enable_visualization 时有效).
@@ -195,6 +195,7 @@ class AnimationTerm(ManagerTermBase):
 
         if not self.cfg.random_fetch:
             self.motion_fetch_time += dt
+            self._fetch_motion_data()
 
         if self.cfg.enable_visualization:
             self._visualize()
@@ -206,9 +207,9 @@ class AnimationTerm(ManagerTermBase):
     def _fetch_motion_data(self, env_ids: Sequence[int] | None = None) -> None:
         """从 MotionDataTerm 批量拉取参考运动帧, 填入各 component buffer."""
         if env_ids is None:
-            env_ids = torch.arange(self.num_envs, device=self._env.device)
+            env_ids = torch.arange(self.num_envs, device=self._env.device) # type:ignore
         else:
-            env_ids = self._to_env_ids_tensor(env_ids)
+            env_ids = self._to_env_ids_tensor(env_ids) # type:ignore
 
         motion_times_flat = self.motion_fetch_time[env_ids].reshape(-1)
         motion_ids_flat = self.motion_ids[env_ids].repeat_interleave(self.num_steps)
@@ -225,7 +226,7 @@ class AnimationTerm(ManagerTermBase):
                 if component == "key_body_pos_b":
                     data = data.view(-1, self.motion_data_term.num_key_bodies, 3)
                 data_reshaped = data.view(
-                    len(env_ids), self.num_steps, *data.shape[1:]
+                    len(env_ids), self.num_steps, *data.shape[1:] # type:ignore
                 )
                 getattr(self, buffer_name)[env_ids, :] = data_reshaped
 
@@ -244,28 +245,28 @@ class AnimationTerm(ManagerTermBase):
 
         # -- 基座位姿 --
         if hasattr(self, "root_pos_w_buffer") and hasattr(self, "root_quat_buffer"):
-            root_pos = self.root_pos_w_buffer[env_ids, 0, :]
-            root_rot = self.root_quat_buffer[env_ids, 0, :]
+            root_pos = self.root_pos_w_buffer[env_ids, 0, :] # type:ignore
+            root_rot = self.root_quat_buffer[env_ids, 0, :]  # type:ignore
             default_root = robot.data.default_root_state[env_ids].clone()
             default_root[:, :3] = root_pos + self._env.scene.env_origins[env_ids, :3]
             default_root[:, 3:7] = root_rot
 
             # 线速度和角速度 (如果配置了)
             if hasattr(self, "root_vel_w_buffer"):
-                vel_w = self.root_vel_w_buffer[env_ids, 0, :]
+                vel_w = self.root_vel_w_buffer[env_ids, 0, :] # type:ignore
                 default_root[:, 7:10] = vel_w
             if hasattr(self, "root_ang_vel_w_buffer"):
-                ang_vel_w = self.root_ang_vel_w_buffer[env_ids, 0, :]
+                ang_vel_w = self.root_ang_vel_w_buffer[env_ids, 0, :] # type:ignore
                 default_root[:, 10:13] = ang_vel_w
 
             robot.write_root_state_to_sim(default_root, env_ids=env_ids)
 
         # -- 关节状态 --
         if hasattr(self, "dof_pos_buffer"):
-            joint_pos = self.dof_pos_buffer[env_ids, 0, :]
+            joint_pos = self.dof_pos_buffer[env_ids, 0, :] # type:ignore
             joint_vel = torch.zeros_like(joint_pos)
             if hasattr(self, "dof_vel_buffer"):
-                joint_vel = self.dof_vel_buffer[env_ids, 0, :]
+                joint_vel = self.dof_vel_buffer[env_ids, 0, :] # type:ignore
             robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
 
     # ------------------------------------------------------------------
@@ -282,9 +283,9 @@ class AnimationTerm(ManagerTermBase):
         if not all(hasattr(self, b) for b in required):
             return
 
-        root_pos_w = self.root_pos_w_buffer[:, 0, :]
-        root_quat = self.root_quat_buffer[:, 0, :]
-        dof_pos = self.dof_pos_buffer[:, 0, :]
+        root_pos_w = self.root_pos_w_buffer[:, 0, :] # type:ignore
+        root_quat = self.root_quat_buffer[:, 0, :]   # type:ignore
+        dof_pos = self.dof_pos_buffer[:, 0, :]       # type:ignore
 
         root_states = robot_anim.data.default_root_state.clone()
         root_states[:, :3] = (
@@ -301,7 +302,7 @@ class AnimationTerm(ManagerTermBase):
         )
 
         if hasattr(self, "key_body_pos_b_buffer"):
-            key_body_pos_b = self.key_body_pos_b_buffer[:, 0, :, :]
+            key_body_pos_b = self.key_body_pos_b_buffer[:, 0, :, :] # type:ignore
             num_key = key_body_pos_b.shape[1]
             key_body_pos_w = root_states[:, :3].unsqueeze(1) + math_utils.quat_apply(
                 root_quat.unsqueeze(1).expand(-1, num_key, -1).reshape(-1, 4),
@@ -412,7 +413,7 @@ class AnimationManager(ManagerBase):
         """
         if env_ids is None or len(env_ids) == 0:
             return {}
-        env_ids = self._to_env_ids_tensor(env_ids)
+        env_ids = self._to_env_ids_tensor(env_ids) # type:ignore
 
         for term in self._terms.values():
             if not term.cfg.enable:
@@ -422,9 +423,9 @@ class AnimationManager(ManagerBase):
             if term.cfg.probability >= 1.0:
                 selected_env_ids = env_ids
             else:
-                mask = torch.rand(len(env_ids), device=self._env.device) < term.cfg.probability
-                selected_env_ids = env_ids[mask]
-            if len(selected_env_ids) > 0:
+                mask = torch.rand(len(env_ids), device=self._env.device) < term.cfg.probability # type:ignore
+                selected_env_ids = env_ids[mask] # type:ignore
+            if len(selected_env_ids) > 0: # type:ignore
                 term.reset(selected_env_ids)
 
         return {}

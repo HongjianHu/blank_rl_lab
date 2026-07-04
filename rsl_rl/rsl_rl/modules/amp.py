@@ -18,19 +18,19 @@ class LossType(Enum):
 
 
 class AMPDiscriminator(nn.Module):
-    def __init__(self, 
+    def __init__(self,
             disc_obs_dim: int,
             disc_obs_steps: int,
             obs_groups: dict,
             loss_type: LossType = LossType.LSGAN,
             hidden_dims = [256, 256, 256],
-            activation="relu",
-            style_reward_scale=1.0, 
-            task_style_lerp=0.0,
+            activation="lrelu",
+            style_reward_scale=0.2,
+            task_style_lerp=0.8,
             device="cpu",
         ):
         super().__init__()
-        
+
         self.input_dim = disc_obs_dim * disc_obs_steps
         self.disc_obs_dim = disc_obs_dim
         self.disc_obs_steps = disc_obs_steps
@@ -155,8 +155,8 @@ class AMPDiscriminator(nn.Module):
             grad_outputs=ones, create_graph=True,
             retain_graph=True, only_inputs=True)[0]
 
-        # Enforce that the grad norm approaches 0.
-        grad_penalty = scale * (grad.norm(2, dim=1) - 0).pow(2).mean()
+        # Match the original Go2 AMP LSGAN regularizer: push expert gradients toward 0.
+        grad_penalty = scale * grad.norm(2, dim=1).pow(2).mean()
         return grad_penalty
 
     def predict_style_reward(self, disc_obs: torch.Tensor, dt: float):
@@ -191,7 +191,7 @@ class AMPDiscriminator(nn.Module):
             else: 
                 raise ValueError(f"Unknown AMP loss type: {self.loss_type}. Should be 'GAN', 'LSGAN', or 'WGAN'")
             
-            style_reward = dt * self.style_reward_scale * rew
+            style_reward = self.style_reward_scale * rew
             
             if was_training:
                 self.train()
@@ -203,6 +203,10 @@ class AMPDiscriminator(nn.Module):
     def lerp_reward(self, task_reward: torch.Tensor, style_reward: torch.Tensor) -> torch.Tensor:
         """Linearly interpolate between task reward and style reward."""
         return self.task_style_lerp * task_reward + (1.0 - self.task_style_lerp) * style_reward
+
+    def set_task_style_lerp(self, lerp: float) -> None:
+        """Set the task-style reward interpolation factor."""
+        self.task_style_lerp = lerp
 
 
 def resolve_amp_config(alg_cfg, obs: TensorDict, obs_groups: dict, env: VecEnv):

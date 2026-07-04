@@ -38,7 +38,7 @@ class MotionDataTermCfg:
 
     # 判别器隐藏层维度
     # 对应 Go2AMPCfgPPO.runner.amp_discr_hidden_dims
-    discr_hidden_dims: ClassVar[list[int]] = [1024, 512]
+    discr_hidden_dims: tuple[int, ...] = (1024, 512)
 
     # AMP style reward 系数
     # 对应 Go2AMPCfgPPO.runner.amp_reward_coef

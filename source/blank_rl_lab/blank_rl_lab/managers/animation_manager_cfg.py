@@ -42,7 +42,7 @@ class AnimationTermCfg:
     #   "dof_pos"          → reset_dofs_amp:      关节角度         [12]
     #   "dof_vel"          → reset_dofs_amp:      关节角速度       [12]
     #   "key_body_pos_b"   → 足端在基座系下位置 (校验用, 不写 sim)   [12]
-    motion_data_components: ClassVar[list[str]] = [
+    motion_data_components: tuple[str, ...] = (
         "root_pos_w",
         "root_quat",
         "root_vel_w",
@@ -50,7 +50,7 @@ class AnimationTermCfg:
         "dof_pos",
         "dof_vel",
         "key_body_pos_b",
-    ]
+    )
 
     # -- 采样策略 --
     # 重置时从轨迹中采多少帧 (当前项目只设初始姿态, 固定为 1)

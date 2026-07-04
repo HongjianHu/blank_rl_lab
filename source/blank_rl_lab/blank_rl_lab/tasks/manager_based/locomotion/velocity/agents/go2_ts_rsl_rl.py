@@ -5,7 +5,7 @@ from blank_rl_lab.rsl_rl import RslRlStudentTeacherCfg, RslRlTsDistillationAlgor
 @configclass
 class Go2FlatDistillRunnerCfg(RslRlDistillRunnerCfg):
     num_steps_per_env = 24
-    max_iterations = 20000
+    max_iterations = 3000
     save_interval = 200
     experiment_name = "go2_demo"
     load_run = "rough_resume"
@@ -21,7 +21,7 @@ class Go2FlatDistillRunnerCfg(RslRlDistillRunnerCfg):
         student_hidden_dims=[512, 256, 128],       
         teacher_hidden_dims=[512, 256, 128],       
         activation="elu",
-        init_noise_std=1.0,
+        init_noise_std=0.1,
         noise_std_type="scalar",
         rnn_type="gru",
         rnn_hidden_dim=256,
@@ -31,9 +31,9 @@ class Go2FlatDistillRunnerCfg(RslRlDistillRunnerCfg):
     algorithm = RslRlTsDistillationAlgorithmCfg(
         class_name="Distillation",
         num_learning_epochs=2,
-        gradient_length=15,
+        gradient_length=24,
         learning_rate=1e-3,
         max_grad_norm=1.0,
-        loss_type="mse",
+        loss_type="huber",
         optimizer="adam",
     )

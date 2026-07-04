@@ -1,0 +1,140 @@
+# Template for replaying an IsaacLab Go2 AMP velocity policy in MuJoCo.
+#
+# This file is intentionally explicit. The safest sim-to-sim path is to avoid
+# guessing any runtime order from model files: record the IsaacLab policy order,
+# then map every policy joint to a MuJoCo joint/actuator by name.
+
+policy:
+  # Prefer an exported TorchScript file from scripts/rsl_rl/play.py.
+  # You can override this on the command line with --policy.
+  path: "logs/rsl_rl/go2_amp/<run>/exported/policy.pt"
+  backend: "torchscript"  # torchscript or onnx
+  device: "cpu"
+
+robot:
+  # Required at runtime. Point this to your MuJoCo scene/model XML.
+  # You can override this on the command line with --model.
+  model_path: "/path/to/go2/scene.xml"
+
+  # Set true for a floating-base quadruped model with qpos[:7] = xyz + quat.
+  free_joint: true
+
+  # MuJoCo qvel angular velocity conventions can differ between interfaces.
+  # "body" means qvel[3:6] is already body-frame angular velocity.
+  # "world" means the runtime will rotate qvel[3:6] into the body frame.
+  free_joint_ang_vel_frame: "body"
+
+  # Initial base pose in MuJoCo qpos convention: x y z qw qx qy qz.
+  base_qpos: [0.0, 0.0, 0.40, 1.0, 0.0, 0.0, 0.0]
+  base_qvel: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+  # This is the order the policy expects. Verify it from IsaacLab runtime:
+  #   env.unwrapped.scene["robot"].joint_names
+  # or export IO descriptors during training.
+  #
+  # For many IsaacLab Go2 PhysX assets, the order is grouped by joint type.
+  # Treat this as a template, not a promise: verify in your run.
+  isaac_joint_names:
+    - "FL_hip_joint"
+    - "FR_hip_joint"
+    - "RL_hip_joint"
+    - "RR_hip_joint"
+    - "FL_thigh_joint"
+    - "FR_thigh_joint"
+    - "RL_thigh_joint"
+    - "RR_thigh_joint"
+    - "FL_calf_joint"
+    - "FR_calf_joint"
+    - "RL_calf_joint"
+    - "RR_calf_joint"
+
+  # MuJoCo joint names paired with isaac_joint_names above.
+  # If the MJCF uses the same names, keep this identical. If it uses another
+  # naming convention, change only this list and keep the same length/order.
+  mujoco_joint_names:
+    - "FL_hip_joint"
+    - "FR_hip_joint"
+    - "RL_hip_joint"
+    - "RR_hip_joint"
+    - "FL_thigh_joint"
+    - "FR_thigh_joint"
+    - "RL_thigh_joint"
+    - "RR_thigh_joint"
+    - "FL_calf_joint"
+    - "FR_calf_joint"
+    - "RL_calf_joint"
+    - "RR_calf_joint"
+
+  # Optional actuator names paired with isaac_joint_names above.
+  # Leave empty to let the code find the actuator attached to each MuJoCo joint.
+  mujoco_actuator_names: []
+
+  # IsaacLab default joint position in isaac_joint_names order.
+  # This comes from source/blank_rl_lab/.../assets/robot/unitree.py.
+  default_joint_pos:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.8
+    - 0.8
+    - 0.8
+    - 0.8
+    - -1.5
+    - -1.5
+    - -1.5
+    - -1.5
+
+control:
+  # IsaacLab env: sim.dt = 0.005, decimation = 4, policy_dt = 0.02 s.
+  sim_dt: 0.005
+  policy_decimation: 4
+
+  # Matches UNITREE_GO2_CFG actuator settings for the AMP task.
+  kp: 25.0
+  kd: 0.5
+  torque_limit: 23.5
+
+  # Matches amp_go2_velocity.py:
+  #   JointPositionActionCfg(..., scale=0.25, use_default_offset=True)
+  action_scale: 0.25
+  action_clip: [-100.0, 100.0]
+
+  # "torque": q_des is converted to torque with the PD law below.
+  # "position": q_des is written directly to data.ctrl; only use this if your
+  # MuJoCo actuators are position actuators.
+  actuator_mode: "torque"
+
+observation:
+  kind: "go2_amp"
+  expected_dim: 45
+  base_ang_vel_scale: 0.25
+  joint_pos_scale: 1.0
+  joint_vel_scale: 0.05
+
+command:
+  # Velocity command sent to the policy: vx, vy, yaw_rate.
+  # These values are the initial command. In viewer mode, keyboard controls can
+  # adjust them online.
+  lin_vel_x: 0.0
+  lin_vel_y: 0.0
+  ang_vel_z: 0.0
+  keyboard_enabled: true
+  lin_vel_step: 0.1
+  ang_vel_step: 0.1
+  lin_vel_limit: 1.5
+  ang_vel_limit: 1.0
+
+viewer:
+  enabled: true
+  realtime: true
+  follow_base: true
+  distance: 2.5
+  azimuth: 135.0
+  elevation: -20.0
+  lookat: [0.0, 0.0, 0.35]
+
+run:
+  duration_s: 20.0
+  zero_policy: false
+  print_model_names: false

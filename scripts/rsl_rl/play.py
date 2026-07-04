@@ -58,7 +58,7 @@ import os
 import time
 import torch
 
-from rsl_rl.runners import DistillationRunner, OnPolicyRunner
+from rsl_rl.runners import AMPRunner, DistillationRunner, OnPolicyRunner
 
 from isaaclab.envs import (
     DirectMARLEnv,
@@ -146,6 +146,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device) # type:ignore
     elif agent_cfg.class_name == "DistillationRunner": # type:ignore
         runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device) # type:ignore
+    elif agent_cfg.class_name == "AMPRunner": #type:ignore
+        runner = AMPRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device) #type:ignore
     else:
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}") # type:ignore
     runner.load(resume_path, map_location=agent_cfg.device)

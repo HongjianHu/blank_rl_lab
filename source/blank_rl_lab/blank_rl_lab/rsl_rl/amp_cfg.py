@@ -8,8 +8,8 @@ class RslRlAmpCfg:
     """Configuration class for the AMP (Adversarial Motion Priors) in the training
     """
     
-    disc_obs_buffer_size: int = 1000
-    """Size of the replay buffer for storing discriminator observations"""
+    disc_obs_buffer_size: int = 256
+    """Per-environment length of the replay buffer for discriminator observations."""
     
     grad_penalty_scale: float = 10.0
     """Scale for the gradient penalty in AMP training"""
@@ -20,7 +20,7 @@ class RslRlAmpCfg:
     disc_linear_weight_decay: float = 1.0e-2
     """Weight decay for the discriminator linear network"""
     
-    disc_learning_rate: float = 1.0e-5
+    disc_learning_rate: float = 1.0e-3
     """Learning rate for the discriminator networks"""
     
     disc_max_grad_norm: float = 1.0
@@ -33,13 +33,13 @@ class RslRlAmpCfg:
         hidden_dims: list[int] = MISSING # type:ignore
         """The hidden dimensions of the AMP discriminator network."""
 
-        activation: str = "elu"
+        activation: str = "lrelu"
         """The activation function for the AMP discriminator network."""
 
-        style_reward_scale: float = 1.0
+        style_reward_scale: float = 0.2
         """Scale for the style reward in the training"""
         
-        task_style_lerp: float = 0.0
+        task_style_lerp: float = 0.8
         """Linear interpolation factor for the task style reward in the AMP training."""
 
     amp_discriminator: AMPDiscriminatorCfg = AMPDiscriminatorCfg()
