@@ -38,22 +38,18 @@ class Go2RslRlOnPolicyRunnerAmpCfg(RslRlOnPolicyRunnerCfg):
         lam=0.95,
         desired_kl=0.01,
         max_grad_norm=1.0,
-        # Match Go2AMPCfgPPO.runner.amp_task_reward_lerp = 0.8.
-        task_style_lerp_start=0.8,
-        task_style_lerp_end=0.8,
-        task_style_lerp_schedule_iters=1,
         amp_cfg=RslRlAmpCfg(
             # 256 * 4096 envs ~= the original 1e6 AMP replay transitions.
             disc_obs_buffer_size=256,
             grad_penalty_scale=10.0,
             disc_trunk_weight_decay=1.0e-4,
             disc_linear_weight_decay=1.0e-2,
-            disc_learning_rate=1.0e-3,
+            disc_learning_rate=5.0e-5,
             disc_max_grad_norm=1.0,
             amp_discriminator=RslRlAmpCfg.AMPDiscriminatorCfg(
-                hidden_dims=[1024, 512],
+                hidden_dims=[512, 256],
                 activation="lrelu",
-                style_reward_scale=0.2,
+                style_reward_scale=0.3,
                 task_style_lerp=0.8
             ),
             loss_type="LSGAN"

@@ -32,6 +32,10 @@ class MotionDataTermCfg:
     # 对应 AMPLoader.__init__(time_between_frames=env.dt)
     time_between_frames: float | None = None
 
+    # Joint order used inside the AMP motion files. If set, dof_pos/dof_vel are
+    # reordered to env.scene["robot"].joint_names at load time.
+    motion_joint_names: tuple[str, ...] = ()
+
     # 判别器预加载过渡对数量 (runner 侧使用, 这里只是透传)
     # 对应 Go2AMPCfgPPO.runner.amp_num_preload_transitions
     num_preload_transitions: int = 2_000_000

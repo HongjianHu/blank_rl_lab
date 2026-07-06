@@ -19,15 +19,6 @@ class RslRlPpoAmpAlgorithmCfg(RslRlPpoAlgorithmCfg):
     amp_cfg: RslRlAmpCfg = RslRlAmpCfg()
     """Configuration for the AMP (Adversarial Motion Priors) in the training."""
 
-    task_style_lerp_start: float = 0.8
-    """Initial value for the task-style reward lerp. 0.8 matches the original Go2 AMP baseline."""
-
-    task_style_lerp_end: float = 0.8
-    """Final value for the task-style reward lerp (after schedule completes)."""
-
-    task_style_lerp_schedule_iters: int = 1
-    """Number of iterations over which to linearly anneal lerp from start to end."""
-
 
 @configclass
 class RslRlBaseRunnerCfg:

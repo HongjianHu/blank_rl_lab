@@ -66,25 +66,26 @@ def root_height(
 def amp_observation(
     env: ManagerBasedEnv,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=MISSING, preserve_order=True), # type:ignore
+    include_key_body_pos_b: bool = True,
+    include_base_motion: bool = True,
+    include_root_height: bool = True,
 ) -> torch.Tensor:
-    """Current 43-D Go2 AMP observation.
+    """Current Go2 AMP observation.
 
-    Matches ``go2_amp.py::get_amp_observations()``:
+    The full 43-D layout matches ``go2_amp.py::get_amp_observations()``:
     joint_pos(12), foot_pos_b(12), base_lin_vel_b(3), base_ang_vel_b(3),
     joint_vel(12), root_z(1).
     """
     robot: Articulation = env.scene[asset_cfg.name]
-    return torch.cat(
-        (
-            robot.data.joint_pos,
-            key_body_pos_b(env, asset_cfg),
-            robot.data.root_lin_vel_b,
-            robot.data.root_ang_vel_b,
-            robot.data.joint_vel,
-            root_height(env, SceneEntityCfg(asset_cfg.name)),
-        ),
-        dim=-1,
-    )
+    obs_terms = [robot.data.joint_pos]
+    if include_key_body_pos_b:
+        obs_terms.append(key_body_pos_b(env, asset_cfg))
+    if include_base_motion:
+        obs_terms.extend([robot.data.root_lin_vel_b, robot.data.root_ang_vel_b])
+    obs_terms.append(robot.data.joint_vel)
+    if include_root_height:
+        obs_terms.append(root_height(env, SceneEntityCfg(asset_cfg.name)))
+    return torch.cat(obs_terms, dim=-1)
 
 
 def ref_root_pos_error(
@@ -261,31 +262,31 @@ def ref_amp_observation(
     env: ManagerBasedAnimationEnv,
     animation: str,
     flatten_steps_dim: bool = True,
+    include_key_body_pos_b: bool = True,
+    include_base_motion: bool = True,
+    include_root_height: bool = True,
 ) -> torch.Tensor:
-    """Reference 43-D Go2 AMP observation sequence from the motion data."""
+    """Reference Go2 AMP observation sequence from the motion data."""
     animation_term: AnimationTerm = env.animation_manager.get_term(animation)
     num_envs = env.num_envs
 
     ref_dof_pos = animation_term.get_dof_pos()
-    ref_key_body_pos_b = animation_term.get_key_body_pos_b()
     num_steps = ref_dof_pos.shape[1]
-    ref_key_body_pos_b = ref_key_body_pos_b.reshape(num_envs, num_steps, -1)
-    ref_root_vel_b = ref_root_lin_vel_b(env, animation, flatten_steps_dim=False)
-    ref_root_ang_vel_obs = ref_root_ang_vel_b(env, animation, flatten_steps_dim=False)
     ref_dof_vel = animation_term.get_dof_vel()
-    ref_root_z = animation_term.get_root_pos_w()[..., 2:3]
 
-    obs = torch.cat(
-        (
-            ref_dof_pos,
-            ref_key_body_pos_b,
-            ref_root_vel_b,
-            ref_root_ang_vel_obs,
-            ref_dof_vel,
-            ref_root_z,
-        ),
-        dim=-1,
-    )
+    obs_terms = [ref_dof_pos]
+    if include_key_body_pos_b:
+        ref_key_body_pos_b = animation_term.get_key_body_pos_b()
+        obs_terms.append(ref_key_body_pos_b.reshape(num_envs, num_steps, -1))
+    if include_base_motion:
+        ref_root_vel_b = ref_root_lin_vel_b(env, animation, flatten_steps_dim=False)
+        ref_root_ang_vel_obs = ref_root_ang_vel_b(env, animation, flatten_steps_dim=False)
+        obs_terms.extend([ref_root_vel_b, ref_root_ang_vel_obs])
+    obs_terms.append(ref_dof_vel)
+    if include_root_height:
+        ref_root_z = animation_term.get_root_pos_w()[..., 2:3]
+        obs_terms.append(ref_root_z)
+    obs = torch.cat(obs_terms, dim=-1)
 
     if flatten_steps_dim:
         return obs.reshape(num_envs, -1)

@@ -130,7 +130,44 @@ class MotionDataTerm(ManagerTermBase):
             )
 
         self.time_between_frames = cfg.time_between_frames
+        self._dof_reorder_indices = self._build_dof_reorder_indices()
         self._load_motion_data()
+
+    def _build_dof_reorder_indices(self) -> torch.Tensor | None:
+        """Map motion-file joint order into IsaacLab's runtime joint order."""
+        if not self.cfg.motion_joint_names:
+            return None
+
+        robot = self._env.scene["robot"]
+        robot_joint_names = tuple(robot.joint_names)
+        motion_joint_names = tuple(self.cfg.motion_joint_names)
+
+        if len(motion_joint_names) != len(robot_joint_names):
+            raise ValueError(
+                "motion_joint_names must match robot.joint_names length: "
+                f"{len(motion_joint_names)} != {len(robot_joint_names)}"
+            )
+
+        missing = [name for name in robot_joint_names if name not in motion_joint_names]
+        if missing:
+            raise ValueError(
+                "Motion data joint order cannot be aligned to robot.joint_names. "
+                f"Missing in motion_joint_names: {missing}. "
+                f"robot.joint_names={list(robot_joint_names)}"
+            )
+
+        motion_name_to_index = {name: index for index, name in enumerate(motion_joint_names)}
+        reorder_indices = [motion_name_to_index[name] for name in robot_joint_names]
+        if reorder_indices == list(range(len(reorder_indices))):
+            print("[MotionDataTerm] motion_joint_names already match robot.joint_names.")
+        else:
+            print("[MotionDataTerm] Reordering AMP dof_pos/dof_vel to robot.joint_names:")
+            for dst_index, src_index in enumerate(reorder_indices):
+                print(
+                    f"  robot[{dst_index:02d}] {robot_joint_names[dst_index]} "
+                    f"<- motion[{src_index:02d}] {motion_joint_names[src_index]}"
+                )
+        return torch.tensor(reorder_indices, device=self.device, dtype=torch.long)
 
     # ------------------------------------------------------------------
     # Data loading (AMPLoader.__init__)
@@ -218,6 +255,8 @@ class MotionDataTerm(ManagerTermBase):
             dof_pos = torch.from_numpy(
                 frames[:, self._DOF_POS_IDX]
             ).to(self.device)
+            if self._dof_reorder_indices is not None:
+                dof_pos = dof_pos.index_select(1, self._dof_reorder_indices)
             key_body_pos_b = torch.from_numpy(
                 frames[:, self._KEY_BODY_POS_IDX]
             ).to(self.device)
@@ -232,6 +271,8 @@ class MotionDataTerm(ManagerTermBase):
             dof_vel = torch.from_numpy(
                 frames[:, self._DOF_VEL_IDX]
             ).to(self.device)
+            if self._dof_reorder_indices is not None:
+                dof_vel = dof_vel.index_select(1, self._dof_reorder_indices)
 
             # Convert base-frame velocities to world frame.
             root_vel_w     = math_utils.quat_apply(root_quat, lin_vel_b)

@@ -204,10 +204,6 @@ class AMPDiscriminator(nn.Module):
         """Linearly interpolate between task reward and style reward."""
         return self.task_style_lerp * task_reward + (1.0 - self.task_style_lerp) * style_reward
 
-    def set_task_style_lerp(self, lerp: float) -> None:
-        """Set the task-style reward interpolation factor."""
-        self.task_style_lerp = lerp
-
 
 def resolve_amp_config(alg_cfg, obs: TensorDict, obs_groups: dict, env: VecEnv):
     if "amp_cfg" in alg_cfg and alg_cfg["amp_cfg"] is not None:

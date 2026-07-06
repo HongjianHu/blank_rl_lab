@@ -68,17 +68,7 @@ class AMPRunner(OnPolicyRunner):
         start_it = self.current_learning_iteration
         total_it = start_it + num_learning_iterations
 
-        # Resolve lerp schedule parameters
-        lerp_start = self.alg_cfg.get("task_style_lerp_start", 1.0)
-        lerp_end = self.alg_cfg.get("task_style_lerp_end", 0.3)
-        lerp_schedule_iters = self.alg_cfg.get("task_style_lerp_schedule_iters", 2000)
-
         for it in range(start_it, total_it):
-            # Update task-style reward lerp according to schedule
-            progress = min((it - start_it) / max(lerp_schedule_iters, 1), 1.0)
-            current_lerp = lerp_start + (lerp_end - lerp_start) * progress
-            self.alg.amp_discriminator.set_task_style_lerp(current_lerp)
-
             start = time.time()
             # Rollout
             with torch.inference_mode():
@@ -108,7 +98,6 @@ class AMPRunner(OnPolicyRunner):
 
             # Update policy
             loss_dict = self.alg.update()
-            loss_dict["amp/task_style_lerp"] = current_lerp
 
             stop = time.time()
             learn_time = stop - start

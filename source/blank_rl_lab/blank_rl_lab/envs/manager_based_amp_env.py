@@ -149,7 +149,7 @@ class ManagerBasedAmpEnv(ManagerBasedAnimationEnv):
         post-reset observation.
         """
         group_name = "disc"
-        if group_name not in self.observation_manager._group_obs_term_names:
+        if group_name not in self.observation_manager._group_obs_term_names: # type:ignore
             return {}
 
         current_disc_obs = self._compute_current_disc_terms(group_name)
@@ -162,8 +162,8 @@ class ManagerBasedAmpEnv(ManagerBasedAnimationEnv):
         return {group_name: terminal_disc_obs}
 
     def _compute_current_disc_terms(self, group_name: str) -> torch.Tensor:
-        term_names = self.observation_manager._group_obs_term_names[group_name]
-        term_cfgs = self.observation_manager._group_obs_term_cfgs[group_name]
+        term_names = self.observation_manager._group_obs_term_names[group_name] # type:ignore
+        term_cfgs = self.observation_manager._group_obs_term_cfgs[group_name] # type:ignore
         obs_terms = []
         for term_cfg in term_cfgs:
             obs = term_cfg.func(self, **term_cfg.params).clone()
@@ -173,10 +173,10 @@ class ManagerBasedAmpEnv(ManagerBasedAnimationEnv):
             if term_cfg.clip:
                 obs = obs.clip_(min=term_cfg.clip[0], max=term_cfg.clip[1])
             if term_cfg.scale is not None:
-                obs = obs.mul_(term_cfg.scale)
+                obs = obs.mul_(term_cfg.scale) # type:ignore
             obs_terms.append(obs)
 
-        if self.observation_manager._group_obs_concatenate[group_name]:
-            concat_dim = self.observation_manager._group_obs_concatenate_dim[group_name]
+        if self.observation_manager._group_obs_concatenate[group_name]: # type:ignore
+            concat_dim = self.observation_manager._group_obs_concatenate_dim[group_name] # type:ignore
             return torch.cat(obs_terms, dim=concat_dim)
         return torch.cat([obs_terms[i] for i, _ in enumerate(term_names)], dim=-1)

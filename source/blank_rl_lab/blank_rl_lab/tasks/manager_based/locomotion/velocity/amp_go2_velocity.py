@@ -30,6 +30,21 @@ KEY_BODY_NAMES = [
     "RR_foot",
 ]
 
+MOTION_JOINT_NAMES = (
+    "FL_hip_joint",
+    "FL_thigh_joint",
+    "FL_calf_joint",
+    "FR_hip_joint",
+    "FR_thigh_joint",
+    "FR_calf_joint",
+    "RL_hip_joint",
+    "RL_thigh_joint",
+    "RL_calf_joint",
+    "RR_hip_joint",
+    "RR_thigh_joint",
+    "RR_calf_joint",
+)
+
 ANIMATION_TERM_NAME = "animation"
 
 AMP_NUM_STEPS = 2
@@ -162,7 +177,9 @@ class ObservationsCfg:
     class DiscriminatorCfg(ObsGroup):
         amp_obs = ObsTerm(
             func=mdp.amp_observation,
-            params={"asset_cfg": SceneEntityCfg("robot", body_names=KEY_BODY_NAMES, preserve_order=True)},
+            params={
+                "asset_cfg": SceneEntityCfg("robot", body_names=KEY_BODY_NAMES, preserve_order=True),
+            },
         )
         
         def __post_init__(self):
@@ -349,6 +366,7 @@ class MotionDataCfg:
     """Motion data settings for the MDP."""
     motion_dataset: MotionDataTerm = MotionDataTerm(
         motion_data_dir="/home/robot/workshop/Robot/IsaacLab/blank_rl_lab/blank_rl_lab/source/blank_rl_lab/blank_rl_lab/datasets/go2_motion",
+        motion_joint_names=MOTION_JOINT_NAMES,
     )
 
 

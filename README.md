@@ -1,6 +1,4 @@
-# Blank RL Lab
-
-## Overview
+# Isaac Lab Robot Learning Workspace
 
 Blank RL Lab is an Isaac Lab extension workspace for developing, training, and
 validating robot learning tasks outside of the core Isaac Lab repository. It is
