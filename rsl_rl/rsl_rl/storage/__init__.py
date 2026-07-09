@@ -7,5 +7,6 @@
 
 from .rollout_storage import RolloutStorage
 from .circular_buffer import CircularBuffer
+from .rollout_storage_ts_depth import RolloutStorageTSDepth
 
 __all__ = ["RolloutStorage", "CircularBuffer"]

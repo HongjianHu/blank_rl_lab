@@ -79,11 +79,12 @@ python scripts/list_envs.py
 
 Use the zero-action and random-action agents before long training runs. These
 commands verify that task registration, reset logic, observations, actions, and
-simulation stepping are healthy.
+simulation stepping are healthy. The examples below use the teacher-student
+velocity task.
 
 ```bash
-python scripts/zero_agent.py --task <TASK_NAME>
-python scripts/random_agent.py --task <TASK_NAME>
+python scripts/zero_agent.py --task Go2-ts-velocity-v0
+python scripts/random_agent.py --task Go2-ts-velocity-v0
 ```
 
 ### Train a Policy
@@ -92,14 +93,14 @@ Training entry points are kept under `scripts/rsl_rl`. Select a registered task
 from `scripts/list_envs.py` and pass it to the training script.
 
 ```bash
-python scripts/rsl_rl/train.py --task <TASK_NAME>
+python scripts/rsl_rl/train.py --task Go2-ts-velocity-v0
 ```
 
 When Isaac Lab is managed by `isaaclab.sh`, run the same script through Isaac
 Lab's launcher:
 
 ```bash
-./isaaclab.sh -p scripts/rsl_rl/train.py --task <TASK_NAME>
+./isaaclab.sh -p scripts/rsl_rl/train.py --task Go2-ts-velocity-v0
 ```
 
 ### Play or Export a Policy
@@ -109,15 +110,15 @@ artifacts when supported by the runner.
 
 ```bash
 python scripts/rsl_rl/play.py \
-    --task <TASK_NAME> \
-    --checkpoint logs/rsl_rl/<EXPERIMENT>/<RUN>/model_<ITERATION>.pt
+    --task Go2-ts-velocity-v0 \
+    --checkpoint logs/rsl_rl/go2_demo/<RUN>/model_<ITERATION>.pt
 ```
 
 Exported artifacts are usually written under the checkpoint run directory, for
 example:
 
 ```text
-logs/rsl_rl/<EXPERIMENT>/<RUN>/exported/
+logs/rsl_rl/go2_demo/<RUN>/exported/
 ```
 
 ### Inspect Runtime Contracts
@@ -129,8 +130,8 @@ action scale, action offset, control timestep, and policy decimation.
 
 ```bash
 ./isaaclab.sh -p scripts/sim2mujoco/inspect_isaaclab_task.py \
-    --task <TASK_NAME> \
-    --output /tmp/<TASK_NAME>_runtime.yaml \
+    --task Go2-ts-velocity-v0 \
+    --output /tmp/go2_ts_runtime.yaml \
     --headless
 ```
 
@@ -150,7 +151,7 @@ checkpoint:
 
 ```bash
 python scripts/sim2mujoco/run.py \
-    --config scripts/sim2mujoco/config/<CONFIG>.yaml \
+    --config scripts/sim2mujoco/config/go2_ts_velocity.yaml \
     --zero-policy
 ```
 
@@ -158,8 +159,8 @@ Then run an exported policy:
 
 ```bash
 python scripts/sim2mujoco/run.py \
-    --config scripts/sim2mujoco/config/<CONFIG>.yaml \
-    --policy logs/rsl_rl/<EXPERIMENT>/<RUN>/exported/policy.pt
+    --config scripts/sim2mujoco/config/go2_ts_velocity.yaml \
+    --policy logs/rsl_rl/go2_demo/<RUN>/exported/policy.pt
 ```
 
 ## Development Notes

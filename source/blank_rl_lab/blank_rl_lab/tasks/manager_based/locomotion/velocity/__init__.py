@@ -40,3 +40,23 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.go2_rsl_rl_ppo_amp_cfg:Go2RslRlOnPolicyRunnerAmpCfg",
     },
 )
+
+gym.register(
+    id="Go2-AMP-rough-velocity-v0",
+    entry_point="blank_rl_lab.envs:ManagerBasedAmpEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.amp_go2_rough_velocity:GO2RobotAMPRoughEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.go2_rsl_rl_amp_rough_cfg:Go2RslRlOnPolicyRunnerAmpRoughCfg",
+    },
+)
+
+gym.register(
+    id="Go2-TSDepth-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point":f"{__name__}.tsdepth_go2_env_cfg:Go2TSDepthEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.go2_rsl_rl_tsdepth_cfg:Go2TSDepthRunnerCfg",
+    },
+)

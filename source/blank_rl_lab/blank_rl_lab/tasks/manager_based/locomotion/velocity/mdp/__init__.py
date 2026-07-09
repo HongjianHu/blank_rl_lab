@@ -4,3 +4,4 @@ from .events import *
 from .rewards import *
 from .commands import *
 from .curriculums import *
+from .terminations import *

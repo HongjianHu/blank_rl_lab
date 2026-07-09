@@ -1,29 +1,19 @@
 from isaaclab.utils import configclass
-from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
 
+from blank_rl_lab.tasks.manager_based.locomotion.velocity.agents.go2_rsl_rl_ppo_amp_cfg import Go2RslRlOnPolicyRunnerAmpCfg
 from blank_rl_lab.rsl_rl import RslRlPpoAmpAlgorithmCfg, RslRlAmpCfg
 
 @configclass
-class Go2RslRlOnPolicyRunnerAmpCfg(RslRlOnPolicyRunnerCfg):
-    class_name = "AMPRunner"
+class Go2RslRlOnPolicyRunnerAmpRoughCfg(Go2RslRlOnPolicyRunnerAmpCfg):
     num_steps_per_env = 24
     max_iterations = 50000
     save_interval = 200
-    experiment_name = "go2_amp"
-    obs_groups = {
-        "policy": ["policy"], 
-        "critic": ["critic"], 
-        "discriminator": ["disc"],
-        "discriminator_demonstration": ["disc_demo"]
-    }
-    policy = RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
-        actor_hidden_dims=[512, 256, 128],
-        critic_hidden_dims=[512, 256, 128],
-        actor_obs_normalization=False,
-        critic_obs_normalization=False,
-        activation="elu",
-    )
+    run_name = "rough_finetune"
+    resume = True
+    load_optimizer = False
+    load_run = "Go2_ampflat_resume"
+    load_checkpoint = "model_2999.pt"
+
     algorithm = RslRlPpoAmpAlgorithmCfg(
         class_name="PPOAMP",
         value_loss_coef=1.0,
@@ -39,6 +29,7 @@ class Go2RslRlOnPolicyRunnerAmpCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
         amp_cfg=RslRlAmpCfg(
+            # 256 * 4096 envs ~= the original 1e6 AMP replay transitions.
             disc_obs_buffer_size=256,
             grad_penalty_scale=10.0,
             disc_trunk_weight_decay=1.0e-4,

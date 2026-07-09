@@ -144,3 +144,23 @@ def apply_force(
     force_command = env.command_manager.get_term("force_command")
     forces[:, 0, 2] = force_command.command[env_ids, 0]
     asset.set_external_force_and_torque(forces, torques, env_ids=env_ids, body_ids=asset_cfg.body_ids, is_global=True)
+
+def push_by_setting_velocity_record_xy(env: ManagerBasedEnv, env_ids: torch.Tensor | None, velocity_range: dict[str, tuple[float, float]], asset_cfg: SceneEntityCfg=SceneEntityCfg('robot')) -> None:
+    asset: RigidObject | Articulation = env.scene[asset_cfg.name]
+    if env_ids is None:
+        env_ids = torch.arange(env.scene.num_envs, device=asset.device, dtype=torch.long)
+    else:
+        env_ids = env_ids.to(device=asset.device, dtype=torch.long)
+    n = env.scene.num_envs
+    if not hasattr(env, '_ts_depth_push_xy'):
+        env._ts_depth_push_xy = torch.zeros(n, 2, device=asset.device)
+    vel_w = asset.data.root_vel_w[env_ids] # 在世界坐标系下的运动状态 root_vel_w, 包含了前3维的线速度和后3维的角速度
+    range_list = [velocity_range.get(key, (0.0, 0.0)) for key in ['x', 'y', 'z', 'roll', 'pitch', 'yaw']]
+    ranges = torch.tensor(range_list, device=asset.device)
+    # 这是Isaac Lab自带的数学工具函数。它会根据刚才定义的(6, 2)的边界，为受袭的个环境分别均匀随机采样出一个6维的速度增量delta
+    delta = math_utils.sample_uniform(ranges[:, 0], ranges[:, 1], vel_w.shape, device=asset.device)
+    vel_w = vel_w + delta
+    # 将叠加了扰动后的新速度重新强行写入PhysX 物理引擎。物理引擎在下一帧迭代时，就会以这个突然变大或变小的速度开始模拟
+    asset.write_root_velocity_to_sim(vel_w, env_ids=env_ids)
+    env._ts_depth_push_xy[env_ids, 0] = delta[:, 0]
+    env._ts_depth_push_xy[env_ids, 1] = delta[:, 1]

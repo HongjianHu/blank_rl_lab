@@ -9,7 +9,7 @@ from isaaclab.assets import Articulation, RigidObject
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers.manager_base import ManagerTermBase
 from isaaclab.managers.manager_term_cfg import ObservationTermCfg
-from isaaclab.sensors import Camera, Imu, RayCaster, RayCasterCamera, TiledCamera
+from isaaclab.sensors import Camera, Imu, RayCaster, RayCasterCamera, TiledCamera, ContactSensor
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv, ManagerBasedRLEnv
@@ -337,7 +337,103 @@ def ref_root_local_rot_tan_norm(
     else:
         return obs
 
+# tsdepth rewards
+def scalar_rigid_friction_mean(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg=SceneEntityCfg('robot')) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    mats = asset.root_physx_view.get_material_properties().to(env.device)
+    mu_s = mats[:, :, 0].mean(dim=1)
+    mu_d = mats[:, :, 1].mean(dim=1)
+    return ((mu_s + mu_d) * 0.5).unsqueeze(-1)
+
+def body_mass_scale(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg=SceneEntityCfg('robot')) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    m = asset.root_physx_view.get_masses().to(env.device)
+    d = asset.data.default_mass.to(env.device)
+    ratio = m[:, asset_cfg.body_ids] / (d[:, asset_cfg.body_ids] + 1e-08)
+    return ratio.mean(dim=-1, keepdim=True)
+
+def body_com_pos_b(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg=SceneEntityCfg('robot')) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    # asset.data.body_com_pos_b: [num_envs, num_bodies, 3]
+    com_b = asset.data.body_com_pos_b[:, asset_cfg.body_ids, :]
+    return com_b.reshape(com_b.shape[0], -1)
+
+def last_push_delta_xy(env: ManagerBasedRLEnv) -> torch.Tensor:
+    if not hasattr(env, '_ts_depth_push_xy'):
+        return torch.zeros(env.num_envs, 2, device=env.device)
+    return env._ts_depth_push_xy.to(device=env.device) # type:ignore
+
+def joint_stiffness_scale(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg=SceneEntityCfg('robot', joint_names=['.*'])) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    s = asset.data.joint_stiffness
+    d = asset.data.default_joint_stiffness
+    if s is None or d is None:
+        return torch.ones(env.num_envs, asset.num_joints, device=env.device)
+    s = s[:, asset_cfg.joint_ids]
+    d = d[:, asset_cfg.joint_ids]
+    return s / (d + 1e-08)
+
+def joint_damping_scale(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg=SceneEntityCfg('robot', joint_names=['.*'])) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    damp = asset.data.joint_damping
+    d0 = asset.data.default_joint_damping
+    if damp is None or d0 is None:
+        return torch.ones(env.num_envs, asset.num_joints, device=env.device)
+    damp = damp[:, asset_cfg.joint_ids]
+    d0 = d0[:, asset_cfg.joint_ids]
+    return damp / (d0 + 1e-08)
+
+def height_relative_to_feet(env: ManagerBasedRLEnv, sensor_names: list[str], asset_cfg: SceneEntityCfg=SceneEntityCfg('robot'), clip: tuple[float, float] | None=(-1.0, 1.0)) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    foot_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]
+    parts = []
+    for (i, name) in enumerate(sensor_names):
+        sensor: RayCaster = env.scene.sensors[name] # type:ignore
+        hits_z = sensor.data.ray_hits_w[..., 2]  # sensor.data.ray_hits_w 形状: [num_envs, num_rays, 3]
+        rel = foot_z[:, i:i + 1] - hits_z
+        if clip is not None:
+            rel = rel.clamp(min=clip[0], max=clip[1])
+        parts.append(rel)
+    return torch.cat(parts, dim=-1)
 
 
+def normal_vector_around_feet(env: ManagerBasedRLEnv, sensor_names: list[str]) -> torch.Tensor:
+    parts = []
+    for name in sensor_names:
+        sensor: RayCaster = env.scene.sensors[name] #type:ignore
+        hits = sensor.data.ray_hits_w # sensor.data.ray_hits_w 形状: [num_envs, num_rays, 3]
+        # 0 1 2
+        # 3 4 5
+        # 6 7 8 (xy order)
+        p0 = hits[:, 0]
+        p1 = hits[:, 2]
+        p2 = hits[:, 6]
+        valid = torch.isfinite(p0).all(dim=-1) & torch.isfinite(p1).all(dim=-1) & torch.isfinite(p2).all(dim=-1)
+        v1 = p1 - p0
+        v2 = p2 - p0
+        normal = torch.cross(v1, v2, dim=-1)
+        normal = normal / torch.norm(normal, dim=-1, keepdim=True).clamp_min(1e-06)
+        default = torch.zeros_like(normal)
+        default[..., 2] = 1.0
+        normal = torch.where(valid.unsqueeze(-1), normal, default)
+        parts.append(normal)
+    return torch.cat(parts, dim=-1)
 
+def links_contact_binary(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, threshold: float=1.0) -> torch.Tensor:
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name] # type:ignore
+    # [num_envs, history_length, num_bodies(机器人本身的总刚体数), 3]
+    net_forces = contact_sensor.data.net_forces_w_history
+    # [num_envs, history_length, num_bodies, 3] -> [num_envs, history_length, num_bodies] -> [num_envs, num_bodies]
+    is_contact = torch.max(torch.norm(net_forces[:, :, sensor_cfg.body_ids], dim=-1), dim=1)[0] > threshold # type:ignore
+    return is_contact.float()
 
+def depth_image_camera(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, max_depth: float=3.0, data_type: str='distance_to_image_plane') -> torch.Tensor:
+    sensor = env.scene.sensors[sensor_cfg.name]
+    depth = sensor.data.output[data_type] # [num_envs, H, W, 1]
+    if depth.dim() == 4 and depth.shape[-1] == 1:
+        depth = depth.squeeze(-1)
+    # 当机器人的相机朝上看仰望天空，或者朝地平线看射向无尽的虚空时，因为射线没有击中任何物理碰撞体（Mesh），
+    # 物理引擎会返回 NaN（非数）或 inf（无穷大）
+    depth = torch.nan_to_num(depth, nan=max_depth, posinf=max_depth, neginf=max_depth)
+    depth = depth.clamp(min=0.0, max=max_depth) / max_depth
+    return depth.flatten(start_dim=1)

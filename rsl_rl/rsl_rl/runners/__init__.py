@@ -8,5 +8,5 @@
 from .on_policy_runner import OnPolicyRunner  # noqa: I001
 from .distillation_runner import DistillationRunner
 from .amp_runner import AMPRunner
-
+from .tsdepth_runner import TsDepthRunner
 __all__ = ["DistillationRunner", "OnPolicyRunner", "AMPRunner"]

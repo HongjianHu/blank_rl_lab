@@ -16,23 +16,24 @@ The main loop in `run.py` follows this order:
 6. Apply PD torque or position actuator commands.
 7. Step MuJoCo and update the viewer.
 
-The first supported observation layout is `go2_amp`, matching the policy group
-in `amp_go2_velocity.py`:
+The example runtime config is `go2_ts_velocity`, matching the deployable policy
+group in `Go2-ts-velocity-v0`:
 
 ```text
-base_ang_vel * 0.25
+base_ang_vel * 0.2
 projected_gravity
 velocity_commands
 joint_pos_rel
 joint_vel_rel * 0.05
+joint_effort * 0.01
 last_action
 ```
 
-For a 12-DoF Go2 this is 45 dimensions.
+For a 12-DoF Go2 this is 57 dimensions.
 
 ## Files
 
-- `config/go2_amp_template.yaml`: editable mapping and control template.
+- `config/go2_ts_velocity.yaml`: editable Go2 teacher-student replay config.
 - `run.py`: the MuJoCo rollout loop.
 - `inspect_isaaclab_task.py`: helper for dumping IsaacLab runtime joint order.
 - `sim2mujoco/config.py`: YAML parsing and validation.
@@ -40,7 +41,7 @@ For a 12-DoF Go2 this is 45 dimensions.
 - `sim2mujoco/observation.py`: IsaacLab observation reconstruction.
 - `sim2mujoco/control.py`: action scale, default offset, and PD control.
 - `sim2mujoco/policy.py`: TorchScript/ONNX/zero-policy inference wrappers.
-- `sim2mujoco/viewer.py`: passive viewer camera controls.
+- `sim2mujoco/viewer.py`: passive viewer setup and policy command keys.
 
 ## Step 1: Export the IsaacLab Runtime Order
 
@@ -48,8 +49,8 @@ Use this before writing a final mapping:
 
 ```bash
 ./isaaclab.sh -p scripts/sim2mujoco/inspect_isaaclab_task.py \
-    --task Go2-AMP-velocity-v0 \
-    --output /tmp/go2_amp_runtime.yaml \
+    --task Go2-ts-velocity-v0 \
+    --output /tmp/go2_ts_runtime.yaml \
     --headless
 ```
 
@@ -70,7 +71,7 @@ Then print MuJoCo names:
 
 ```bash
 python3 scripts/sim2mujoco/run.py \
-    --config scripts/sim2mujoco/config/go2_amp_template.yaml \
+    --config scripts/sim2mujoco/config/go2_ts_velocity.yaml \
     --model /absolute/path/to/go2/scene.xml \
     --print-model-names
 ```
@@ -84,7 +85,7 @@ Zero action should hold the default pose:
 
 ```bash
 python3 scripts/sim2mujoco/run.py \
-    --config scripts/sim2mujoco/config/go2_amp_template.yaml \
+    --config scripts/sim2mujoco/config/go2_ts_velocity.yaml \
     --model /absolute/path/to/go2/scene.xml \
     --zero-policy
 ```
@@ -96,29 +97,24 @@ actuator mode, PD gains, or joint mapping before loading the neural policy.
 
 ```bash
 python3 scripts/sim2mujoco/run.py \
-    --config scripts/sim2mujoco/config/go2_amp_template.yaml \
+    --config scripts/sim2mujoco/config/go2_ts_velocity.yaml \
     --model /absolute/path/to/go2/scene.xml \
-    --policy logs/rsl_rl/go2_amp/<run>/exported/policy.pt \
+    --policy logs/rsl_rl/go2_demo/<run>/exported/policy.pt \
     --command 0.2 0.0 0.0
 ```
 
-## Viewer Keys
+## Viewer Control
+
+Use MuJoCo's native viewer UI, mouse controls, and built-in visualization
+shortcuts for camera movement, pause/reset controls, and debug overlays.
+
+The sim2mujoco callback only handles policy velocity commands:
 
 ```text
-h: help
-p: pause/resume
-r: reset simulation
-f: toggle follow-base camera
-w/s: raise/lower camera elevation
-a/d: rotate camera azimuth
-q/e: zoom in/out
-i/k: move lookat in world x
-j/l: move lookat in world y
-u/o: move lookat in world z
 up/down: increase/decrease vx
-left/right: increase/decrease yaw rate
-z/x: increase/decrease lateral velocity vy
-space: zero velocity command
+left/right: increase/decrease yaw rate wz
+page up/page down: increase/decrease lateral velocity vy
+backspace: zero velocity command
 ```
 
 ## Implementation Order For Learning

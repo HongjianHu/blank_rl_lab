@@ -118,6 +118,15 @@ class ActorCriticRecurrent(nn.Module):
         # Disable args validation for speedup
         Normal.set_default_validate_args(False)
 
+    def _positive_std(self) -> torch.Tensor:
+        """Keep directly-parameterized exploration std valid for Normal."""
+        if self.noise_std_type != "scalar":
+            raise RuntimeError("_positive_std() is only valid for scalar noise std.")
+        with torch.no_grad():
+            clean_std = torch.nan_to_num(self.std, nan=1.0, posinf=10.0, neginf=1.0)
+            self.std.copy_(clean_std.clamp(min=1.0e-6, max=10.0))
+        return self.std
+
     @property
     def action_mean(self) -> torch.Tensor:
         return self.distribution.mean
@@ -153,7 +162,7 @@ class ActorCriticRecurrent(nn.Module):
             mean = self.actor(obs)
             # Compute standard deviation
             if self.noise_std_type == "scalar":
-                std = self.std.expand_as(mean)
+                std = self._positive_std().expand_as(mean)
             elif self.noise_std_type == "log":
                 std = torch.exp(self.log_std).expand_as(mean)
             else:

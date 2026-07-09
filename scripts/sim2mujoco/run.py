@@ -46,7 +46,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Override velocity command sent to the policy.",
     )
-    parser.add_argument("--duration", type=float, default=None, help="Override run.duration_s. Use <=0 for no limit.")
+    parser.add_argument("--duration", type=float, default=0, help="Override run.duration_s. Use <=0 for no limit.")
     parser.add_argument("--headless", action="store_true", help="Run without viewer.")
     parser.add_argument("--zero-policy", action="store_true", help="Use zero actions instead of loading a policy.")
     parser.add_argument("--print-model-names", action="store_true", help="Print MuJoCo joint/actuator names and exit.")

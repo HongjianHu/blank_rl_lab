@@ -82,7 +82,7 @@ from datetime import datetime
 
 import gymnasium as gym
 import torch
-from rsl_rl.runners import DistillationRunner, OnPolicyRunner, AMPRunner
+from rsl_rl.runners import DistillationRunner, OnPolicyRunner, AMPRunner, TsDepthRunner
 
 from isaaclab.envs import (
     DirectMARLEnv,
@@ -208,6 +208,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device) #type:ignore
     elif agent_cfg.class_name == "AMPRunner": #type:ignore
         runner = AMPRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device) #type:ignore
+    elif agent_cfg.class_name == "TsDepthRunner": #type:ignore
+        from rsl_rl.runners import TsDepthRunner
+        runner = TsDepthRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device) #type:ignore
     else:
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}") #type:ignore
     
@@ -218,14 +221,21 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation": # #type:ignore
         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
         # load previously trained model
-        runner.load(resume_path)
+        load_optimizer = getattr(agent_cfg, "load_optimizer", None)
+        if load_optimizer is None:
+            runner.load(resume_path)
+        else:
+            runner.load(resume_path, load_optimizer=load_optimizer)
+        print("[INFO]: Checkpoint loaded successfully.")
 
     # dump the configuration into log-directory
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
 
-    # run training
-    runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+    # Random episode starts are useful for fresh training, but rough-terrain finetuning from a
+    # checkpoint can otherwise trigger a large reset/curriculum burst in the first few iterations.
+    init_at_random_ep_len = not bool(agent_cfg.resume)
+    runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=init_at_random_ep_len)
 
     print(f"Training time: {round(time.time() - start_time, 2)} seconds")
 

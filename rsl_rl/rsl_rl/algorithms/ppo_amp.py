@@ -383,6 +383,8 @@ class PPOAMP(PPO):
             # Apply the gradients for PPO
             nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
             self.optimizer.step()
+            if getattr(self.policy, "noise_std_type", None) == "scalar" and hasattr(self.policy, "_positive_std"):
+                self.policy._positive_std()
             # Apply the gradients for RND
             if self.rnd_optimizer:
                 self.rnd_optimizer.step()
