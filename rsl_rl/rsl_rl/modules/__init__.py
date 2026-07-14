@@ -14,6 +14,11 @@ from .actor_critic_recurrent import ActorCriticRecurrent
 from .student_teacher_recurrent import StudentTeacherRecurrent
 from .student_teacher import StudentTeacher
 from .depth_history_encoder import DepthHistoryEncoder
+from .actor_critic_cts import ActorCriticCTS
+from .actor_critic_moe_ng_cts import (
+    ActorCriticMoENGCTS,
+    StudentMoEEncoder,
+)
 
 __all__ = [
     "ActorCritic",
@@ -27,4 +32,7 @@ __all__ = [
     "resolve_amp_config",
     "StudentTeacherRecurrent",
     "DepthHistoryEncoder",
+    "ActorCriticCTS",
+    "StudentMoEEncoder",
+    "ActorCriticMoENGCTS",
 ]

@@ -19,22 +19,88 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from blank_rl_lab.assets.robot.unitree import UNITREE_GO2_CFG as RobotCFG
-from blank_rl_lab.tasks.manager_based.locomotion.velocity import mdp
+from blank_rl_lab.tasks.manager_based.locomotion.legged.velocity import mdp
+from isaaclab.terrains import TerrainImporterCfg, TerrainGeneratorCfg
+import isaaclab.terrains as terrain_gen
+
+COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
+    size=(8.0, 8.0),
+    border_width=20.0,
+    num_rows=10,
+    num_cols=20,
+    horizontal_scale=0.1,
+    vertical_scale=0.005,
+    slope_threshold=None,
+    difficulty_range=(0.0, 1.0),
+    use_cache=False,
+    sub_terrains={
+        "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.20),
+        "smooth_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
+            proportion=0.05,
+            slope_range=(0.0, 0.04),
+            platform_width=3.0,
+            border_width=0.25,
+        ),
+        "smooth_slope_inv": terrain_gen.HfInvertedPyramidSlopedTerrainCfg(
+            proportion=0.05,
+            slope_range=(0.0, 0.04),
+            platform_width=3.0,
+            border_width=0.25,
+        ),
+        "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
+            proportion=0.15,
+            noise_range=(0.0, 0.05),
+            noise_step=0.005,
+            downsampled_scale=0.2,
+            border_width=0.25,
+        ),
+        "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
+            proportion=0.20,
+            step_height_range=(0.05, 0.07),
+            step_width=0.31,
+            platform_width=3.0,
+            border_width=1.0,
+            holes=False,
+        ),
+        "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+            proportion=0.15,
+            step_height_range=(0.05, 0.07),
+            step_width=0.31,
+            platform_width=3.0,
+            border_width=1.0,
+            holes=False,
+        ),
+        "discrete_obstacles": terrain_gen.HfDiscreteObstaclesTerrainCfg(
+            proportion=0.20,
+            obstacle_height_mode="choice",
+            obstacle_width_range=(1.0, 2.0),
+            obstacle_height_range=(0.05, 0.07),
+            num_obstacles=20,
+            platform_width=3.0,
+            border_width=0.25,
+        ),
+    },
+)
 
 @configclass
-class MySceneCfg(InteractiveSceneCfg):
+class RoughSceneCfg(InteractiveSceneCfg):
     """Configuration for the terrain scene with a legged robot."""
-
-    # ground terrain
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
-        terrain_type="plane",
+        terrain_type="generator",
+        terrain_generator=COBBLESTONE_ROAD_CFG,
+        max_init_terrain_level=0,
         collision_group=-1,
         physics_material=sim_utils.RigidBodyMaterialCfg(
             friction_combine_mode="multiply",
             restitution_combine_mode="multiply",
             static_friction=1.0,
             dynamic_friction=1.0,
+        ),
+        visual_material=sim_utils.MdlFileCfg(
+            mdl_path=f"{ISAACLAB_NUCLEUS_DIR}/Materials/TilesMarbleSpiderWhiteBrickBondHoned/TilesMarbleSpiderWhiteBrickBondHoned.mdl",
+            project_uvw=True,
+            texture_scale=(0.25, 0.25),
         ),
         debug_vis=False,
     )
@@ -66,7 +132,6 @@ class ObservationsCfg:
     @configclass
     class PolicyCfg(ObsGroup):
         # observation terms (order preserved)
-        base_lin_vel = ObsTerm(func=mdp.base_lin_vel, noise=Unoise(n_min=-0.1, n_max=0.1), clip=(-100.0, 100.0), scale=1.0)
         base_ang_vel = ObsTerm(func=mdp.base_ang_vel, scale=0.2, clip=(-100, 100), noise=Unoise(n_min=-0.2, n_max=0.2))
         projected_gravity = ObsTerm(func=mdp.projected_gravity, clip=(-100, 100), noise=Unoise(n_min=-0.05, n_max=0.05))
         velocity_commands = ObsTerm(func=mdp.generated_commands, params={"command_name": "base_velocity"}) # 3 
@@ -75,10 +140,6 @@ class ObservationsCfg:
         joint_effort = ObsTerm(func=mdp.joint_effort, scale=0.01, clip=(-100, 100))
 
         last_action = ObsTerm(func=mdp.last_action, clip=(-100, 100))
-        height_scanner = ObsTerm(func=mdp.height_scan,
-            params={"sensor_cfg": SceneEntityCfg("height_scanner")},
-            clip=(-1.0, 5.0),
-        )
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = True
@@ -188,19 +249,12 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg("robot"),
             "sensor_cfg": SceneEntityCfg("height_scanner"),
         },
-    ) 
-    
-    # action_smoothness_second_order = RewTerm(
-    #     func=mdp.action_smoothness_second_order,
-    #     weight=-0.1,
-    #     params={"action_name": "joint_pos"}, 
-    # ) 
+    )  
     
 @configclass
 class CurriculumCfg:
     """Curriculum terms for the MDP."""
-
-    # lin_vel_cmd_levels = CurrTerm(func=mdp.lin_vel_cmd_levels) # type: ignore
+    terrain_levels = CurrTerm(func=mdp.terrain_levels_vel) # type: ignore
 
 @configclass
 class TerminationsCfg:
@@ -233,11 +287,11 @@ class EventCfg:
     )
 
 @configclass
-class GO2RobotDemoEnvCfg(ManagerBasedRLEnvCfg):
+class GO2RobotTsEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the locomotion velocity-tracking environment."""
 
     # Scene settings
-    scene: MySceneCfg = MySceneCfg(num_envs=4096, env_spacing=2.5)
+    scene: RoughSceneCfg = RoughSceneCfg(num_envs=4096, env_spacing=2.5)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
@@ -246,7 +300,7 @@ class GO2RobotDemoEnvCfg(ManagerBasedRLEnvCfg):
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
     events: EventCfg = EventCfg()
-    # curriculum: CurriculumCfg = CurriculumCfg()
+    curriculum: CurriculumCfg = CurriculumCfg()
 
     def __post_init__(self):
         """Post initialization."""

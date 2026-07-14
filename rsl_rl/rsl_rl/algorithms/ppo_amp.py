@@ -126,13 +126,13 @@ class PPOAMP(PPO):
         disc_obs = self.amp_discriminator.get_disc_obs(obs, flatten_history_dim=False)
         disc_demo_obs = self.amp_discriminator.get_disc_demo_obs(obs, flatten_history_dim=False)
         if "terminal_obs" in extras:
-            terminal_disc_obs = self.amp_discriminator.get_disc_obs(extras["terminal_obs"], flatten_history_dim=False)
+            terminal_disc_obs = self.amp_discriminator.get_disc_obs(extras["terminal_obs"], flatten_history_dim=False) # type:ignore
             done_mask = dones.to(dtype=torch.bool)
             if torch.any(done_mask):
                 disc_obs = disc_obs.clone()
                 disc_obs[done_mask] = terminal_disc_obs[done_mask]
         # Compute the Style Reward
-        self.style_rewards, self.disc_score = self.amp_discriminator.predict_style_reward(disc_obs, dt=self.amp_cfg["step_dt"])
+        self.style_rewards, self.disc_score = self.amp_discriminator.predict_style_reward(disc_obs, dt=self.amp_cfg["step_dt"]) # type:ignore
         # Linearly interpolate between task reward and style reward
         self.rewards_lerp = self.amp_discriminator.lerp_reward(task_reward=rewards, style_reward=self.style_rewards)
         # Store the un-normalized disc obs and disc demo obs into buffers
@@ -226,7 +226,7 @@ class PPOAMP(PPO):
             # Compute KL divergence and adapt the learning rate
             if self.desired_kl is not None and self.schedule == "adaptive":
                 with torch.inference_mode():
-                    kl = torch.sum(
+                    kl = torch.sum( # type:ignore
                         torch.log(sigma_batch / old_sigma_batch + 1.0e-5)
                         + (torch.square(old_sigma_batch) + torch.square(old_mu_batch - mu_batch))
                         / (2.0 * torch.square(sigma_batch))
@@ -361,7 +361,7 @@ class PPOAMP(PPO):
 
             disc_grad_penalty = self.amp_discriminator.compute_grad_penalty(
                 demo_data=disc_demo_obs_batch_normed.reshape(mini_batch_size, -1),
-                scale=self.amp_cfg["grad_penalty_scale"]
+                scale=self.amp_cfg["grad_penalty_scale"] # type:ignore
             )
             disc_total_loss = disc_loss + disc_grad_penalty
 
@@ -370,7 +370,7 @@ class PPOAMP(PPO):
             loss.backward()
             # Compute the gradients for RND
             if self.rnd:
-                self.rnd_optimizer.zero_grad()
+                self.rnd_optimizer.zero_grad() # type:ignore
                 rnd_loss.backward()
             # Compute the gradients for AMP discriminator
             self.disc_optimizer.zero_grad()
@@ -384,7 +384,7 @@ class PPOAMP(PPO):
             nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
             self.optimizer.step()
             if getattr(self.policy, "noise_std_type", None) == "scalar" and hasattr(self.policy, "_positive_std"):
-                self.policy._positive_std()
+                self.policy._positive_std() # type:ignore
             # Apply the gradients for RND
             if self.rnd_optimizer:
                 self.rnd_optimizer.step()

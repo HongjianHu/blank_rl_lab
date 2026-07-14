@@ -164,3 +164,36 @@ def push_by_setting_velocity_record_xy(env: ManagerBasedEnv, env_ids: torch.Tens
     asset.write_root_velocity_to_sim(vel_w, env_ids=env_ids)
     env._ts_depth_push_xy[env_ids, 0] = delta[:, 0]
     env._ts_depth_push_xy[env_ids, 1] = delta[:, 1]
+
+
+def go2_push_by_setting_root_velocity(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor | None,
+    velocity_range: dict[str, tuple[float, float]],
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> None:
+    asset: RigidObject | Articulation = env.scene[asset_cfg.name]
+    if env_ids is None:
+        env_ids = torch.arange(env.scene.num_envs, device=asset.device)
+    else:
+        env_ids = env_ids.to(device=asset.device)
+    vel_w = asset.data.root_vel_w[env_ids].clone()
+    axis_to_index = {
+        "x": 0,
+        "y": 1,
+        "z": 2,
+        "roll": 3,
+        "pitch": 4,
+        "yaw": 5,
+    }
+    for axis, index in axis_to_index.items():
+        if axis not in velocity_range:
+            continue
+        low, high = velocity_range[axis]
+        vel_w[:, index] = math_utils.sample_uniform(
+            low,
+            high,
+            (len(env_ids),),
+            device=asset.device,
+        )
+    asset.write_root_velocity_to_sim(vel_w, env_ids=env_ids) # type:ignore

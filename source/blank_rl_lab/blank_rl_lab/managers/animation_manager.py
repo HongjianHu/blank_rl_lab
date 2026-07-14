@@ -248,7 +248,9 @@ class AnimationTerm(ManagerTermBase):
             root_pos = self.root_pos_w_buffer[env_ids, 0, :] # type:ignore
             root_rot = self.root_quat_buffer[env_ids, 0, :]  # type:ignore
             default_root = robot.data.default_root_state[env_ids].clone()
-            default_root[:, :3] = root_pos + self._env.scene.env_origins[env_ids, :3]
+            env_origins = self._env.scene.env_origins[env_ids]
+            default_root[:, :2] = env_origins[:, :2]
+            default_root[:, 2] = env_origins[:, 2] + root_pos[:, 2]
             default_root[:, 3:7] = root_rot
 
             # 线速度和角速度 (如果配置了)

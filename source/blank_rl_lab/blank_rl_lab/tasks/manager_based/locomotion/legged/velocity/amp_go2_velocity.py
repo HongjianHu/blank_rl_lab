@@ -16,7 +16,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
-import blank_rl_lab.tasks.manager_based.locomotion.velocity.mdp as mdp
+import blank_rl_lab.tasks.manager_based.locomotion.legged.velocity.mdp as mdp
 from blank_rl_lab.envs import ManagerBasedAmpEnvCfg
 from blank_rl_lab.assets.robot.unitree import UNITREE_GO2_CFG as RobotCFG
 
@@ -48,6 +48,26 @@ MOTION_JOINT_NAMES = (
 ANIMATION_TERM_NAME = "animation"
 
 AMP_NUM_STEPS = 2
+
+FLAT_AMP_MOTION_WEIGHTS = {
+    "go2_forward": 0.12,
+    "go2_forward_fast": 0.12,
+    "go2_forward_faster": 0.08,
+
+    "go2_backward": 0.10,
+    "go2_backward_fast": 0.08,
+    "go2_backward_faster": 0.05,
+
+    "go2_turn_left": 0.08,
+    "go2_turn_left_fast": 0.08,
+    "go2_turn_left_faster": 0.05,
+
+    "go2_turn_right": 0.08,
+    "go2_turn_right_fast": 0.08,
+    "go2_turn_right_faster": 0.05,
+
+    "go2_stance": 0.03,
+}
 
 @configclass
 class AmpSceneCfg(InteractiveSceneCfg):
@@ -105,14 +125,17 @@ class CommandsCfg:
     base_velocity = mdp.UniformVelocityCommandCfg(
         asset_name="robot",
         resampling_time_range=(10.0, 10.0),
-        rel_standing_envs=0.00, # !!!
+        rel_standing_envs=0.05, # !!!
         rel_heading_envs=0.0,   # !!!
         heading_command=False,
         heading_control_stiffness=0.5,
         debug_vis=True,
         ranges=mdp.UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(-1.2, 1.5), lin_vel_y=(-0.8, 0.8), ang_vel_z=(-1.0, 1.0), heading=(-1.57, 1.57)
-        ),
+            lin_vel_x=(-1.0, 1.3),
+            lin_vel_y=(0.0, 0.0),
+            ang_vel_z=(-0.5, 0.5),
+            heading=(0.0, 0.0),
+        )
     )
 
 
@@ -132,6 +155,13 @@ class ObservationsCfg:
         """Observations for policy group."""
 
         # observation terms (order preserved)
+        height_scan = ObsTerm(
+            func=mdp.height_scan,
+            scale=2.5,
+            params={"sensor_cfg": SceneEntityCfg("height_scanner")},
+            noise=Unoise(n_min=-0.1, n_max=0.1),
+            clip=(-1.0, 1.0),
+        )
         base_ang_vel = ObsTerm(func=mdp.base_ang_vel, scale=0.25, noise=Unoise(n_min=-0.2, n_max=0.2))
         projected_gravity = ObsTerm(
             func=mdp.projected_gravity,
@@ -179,18 +209,19 @@ class ObservationsCfg:
             func=mdp.amp_observation,
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=KEY_BODY_NAMES, preserve_order=True),
+                "include_root_height": False,
             },
         )
-        
+
         def __post_init__(self):
             self.enable_corruption = False
             self.concatenate_terms = True
             self.concatenate_dim = -1
             self.history_length = AMP_NUM_STEPS
             self.flatten_history_dim = False
-            
+
     disc: DiscriminatorCfg = DiscriminatorCfg()
-            
+
     @configclass
     class DiscriminatorDemoCfg(ObsGroup):
         ref_amp_obs = ObsTerm(
@@ -198,15 +229,16 @@ class ObservationsCfg:
             params={
                 "animation": ANIMATION_TERM_NAME,
                 "flatten_steps_dim": False,
+                "include_root_height": False,
             }
         )
-        
+
         def __post_init__(self):
             self.enable_corruption = False
             self.concatenate_terms = True
             self.concatenate_dim = -1
             self.flatten_history_dim = False
-    
+
     disc_demo: DiscriminatorDemoCfg = DiscriminatorDemoCfg()
 
 @configclass
@@ -319,7 +351,7 @@ class RewardsCfg:
     undesired_contacts = RewTerm(
         func=mdp.undesired_contacts,
         weight=-1.0,
-        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_thigh"), "threshold": 1.0},
+        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=[".*_thigh", ".*_calf"]), "threshold": 1.0},
     )
 
     base_height = RewTerm(
@@ -331,8 +363,24 @@ class RewardsCfg:
             "sensor_cfg": SceneEntityCfg("height_scanner"),
         },
     )
-    # -- optional penalties
-    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=0.0)
+    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-0.5)
+
+    feet_slip = RewTerm(
+    func=mdp.feet_slip,
+    weight=-0.04,
+    params={
+        "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+        "sensor_cfg": SceneEntityCfg("contact_forces",body_names=".*_foot",),
+    },
+    )
+
+    dof_power = RewTerm(
+    func=mdp.dof_power_l1,
+    weight=-2.0e-5,
+    params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=[".*"]),
+    },
+    )
     dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-2.0)
 
 
@@ -415,3 +463,5 @@ class Go2RobotAMPEnvCfg(ManagerBasedAmpEnvCfg):
             self.curriculum.terrain_levels = None # type: ignore
         else:
             self.scene.terrain.terrain_generator.curriculum = True
+
+        self.motion_data.motion_dataset.motion_data_weights = FLAT_AMP_MOTION_WEIGHTS.copy()

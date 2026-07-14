@@ -58,7 +58,7 @@ import os
 import time
 import torch
 
-from rsl_rl.runners import AMPRunner, DistillationRunner, OnPolicyRunner
+from rsl_rl.runners import AMPRunner, DistillationRunner, OnPolicyRunner, TsDepthRunner, OnPolicyRunnerCTS
 
 from isaaclab.envs import (
     DirectMARLEnv,
@@ -72,6 +72,10 @@ from isaaclab.utils.dict import print_dict
 from isaaclab_rl.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
 
 from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
+from rsl_rl.utils import (
+    export_cts_policy_as_jit,
+    export_cts_policy_as_onnx,
+)
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import get_checkpoint_path
@@ -148,6 +152,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device) # type:ignore
     elif agent_cfg.class_name == "AMPRunner": #type:ignore
         runner = AMPRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device) #type:ignore
+    elif agent_cfg.class_name == "TsDepthRunner": #type:ignore
+        runner = TsDepthRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device) #type:ignore
+    elif agent_cfg.class_name == "OnPolicyRunnerCTS": #type:ignore
+        runner = OnPolicyRunnerCTS(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device) #type:ignore
     else:
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}") # type:ignore
     runner.load(resume_path, map_location=agent_cfg.device)
@@ -177,14 +185,24 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # ``policy.memory_a.rnn``; custom architectures can be incompatible. Skip with
     # a warning instead of crashing the play loop.
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-    try:
-        export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
-    except (AttributeError, TypeError, ValueError, RuntimeError, NotImplementedError) as e:
-        print(f"[WARNING] export_policy_as_jit skipped (incompatible policy architecture): {e}")
-    try:
-        export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
-    except (AttributeError, TypeError, ValueError, RuntimeError, NotImplementedError) as e:
-        print(f"[WARNING] export_policy_as_onnx skipped (incompatible policy architecture): {e}")
+    if agent_cfg.class_name == "OnPolicyRunnerCTS":  # type: ignore
+        try:
+            export_cts_policy_as_jit(policy_nn, path=export_model_dir, filename="policy.pt")
+        except (AttributeError, TypeError, ValueError, RuntimeError, NotImplementedError) as e:
+            print(f"[WARNING] export_policy_as_jit skipped (incompatible policy architecture): {e}")
+        try:
+            export_cts_policy_as_onnx(policy_nn, path=export_model_dir, filename="policy.onnx")
+        except (AttributeError, TypeError, ValueError, RuntimeError, NotImplementedError) as e:
+            print(f"[WARNING] export_policy_as_onnx skipped (incompatible policy architecture): {e}")
+    else:
+        try:
+            export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
+        except (AttributeError, TypeError, ValueError, RuntimeError, NotImplementedError) as e:
+            print(f"[WARNING] export_policy_as_jit skipped (incompatible policy architecture): {e}")
+        try:
+            export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+        except (AttributeError, TypeError, ValueError, RuntimeError, NotImplementedError) as e:
+            print(f"[WARNING] export_policy_as_onnx skipped (incompatible policy architecture): {e}")
 
     dt = env.unwrapped.step_dt
 

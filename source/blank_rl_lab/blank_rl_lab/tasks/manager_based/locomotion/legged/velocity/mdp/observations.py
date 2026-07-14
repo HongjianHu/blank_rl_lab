@@ -437,3 +437,46 @@ def depth_image_camera(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, max_d
     depth = torch.nan_to_num(depth, nan=max_depth, posinf=max_depth, neginf=max_depth)
     depth = depth.clamp(min=0.0, max=max_depth) / max_depth
     return depth.flatten(start_dim=1)
+
+
+#=======================CTS-MOSE=====================================#
+def go2_height_scan(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    offset: float = 0.5,
+    clip: tuple[float, float] = (-1.0, 1.0),
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    sensor: RayCaster = env.scene.sensors[sensor_cfg.name] # type:ignore
+
+    base_z = asset.data.root_pos_w[:, 2].unsqueeze(1)
+    hit_z = sensor.data.ray_hits_w[..., 2]
+    safe_hit_z = torch.where(torch.isfinite(hit_z), hit_z, base_z - offset)
+
+    heights = base_z - offset - safe_hit_z
+    return torch.clamp(heights, clip[0], clip[1])
+
+def go2_foot_contact_forces(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name] # type:ignore
+    contact_forces = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, :] # type:ignore
+    return torch.linalg.norm(contact_forces, dim=-1) * 1.0e-3
+
+def go2_joint_torques_normalized(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    torques = asset.data.applied_torque[:, asset_cfg.joint_ids]
+    torque_limits = torch.abs(asset.data.joint_effort_limits[:, asset_cfg.joint_ids]).clamp(min=1.0e-6)
+    return torques / torque_limits
+
+def go2_joint_acc_legacy_scaled(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    return -asset.data.joint_acc[:, asset_cfg.joint_ids] * 1.0e-4

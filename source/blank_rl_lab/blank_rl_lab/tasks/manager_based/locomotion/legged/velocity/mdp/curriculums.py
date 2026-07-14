@@ -56,6 +56,32 @@ def lin_vel_cmd_levels(
 
     return torch.tensor(ranges.lin_vel_x[1], device=env.device)
 
+def reward_weight_schedule(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    reward_term_name: str,
+    base_weight: float,
+    start_iter: int,
+    end_iter: int,
+    start_scale: float,
+    end_scale: float,
+    iteration_length: int = 24,
+):
+    del env_ids
+
+    reward_term_cfg = env.reward_manager.get_term_cfg(reward_term_name)
+
+    current_iter = env.common_step_counter // iteration_length
+    progress = (current_iter - start_iter) / max(end_iter - start_iter, 1)
+    progress = min(max(progress, 0.0), 1.0)
+
+    scale = (1.0 - progress) * start_scale + progress * end_scale
+    reward_term_cfg.weight = base_weight * scale
+
+    env.reward_manager.set_term_cfg(reward_term_name, reward_term_cfg)
+
+    return float(reward_term_cfg.weight)
+
 
 def terrain_levels_vel(
     env: ManagerBasedRLEnv, env_ids: Sequence[int], asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
@@ -86,4 +112,46 @@ def terrain_levels_vel(
     # update terrain levels
     terrain.update_env_origins(env_ids, move_up, move_down) # type: ignore
     # return the mean terrain level
+    return torch.mean(terrain.terrain_levels.float())
+
+def terrain_levels_by_go2_command(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    command_name: str = "base_velocity",
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+)-> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    terrain: TerrainImporter = env.scene.terrain  # type: ignore
+    command_term = env.command_manager.get_term(command_name)
+
+    current_distance = torch.norm(
+        asset.data.root_pos_w[env_ids, :2] - env.scene.env_origins[env_ids, :2],
+        dim=1,
+    )
+    # max_move_distance 是跨时间累积的最大值。
+    distance = torch.maximum(
+        command_term.max_move_distance[env_ids],  # type: ignore
+        current_distance,
+    )
+
+    terrain_length = terrain.cfg.terrain_generator.size[0]  # type: ignore
+
+    move_up = distance > terrain_length / 2
+
+    # 按整个 episode 采样过的 command 来看，机器人理论上被要求走多远
+    # 因为 zero command 会让一部分时间不要求机器人平移，所以原版把期望距离按非 zero 概率缩一下。
+    expected_distance = (
+        torch.norm(command_term.commands_xy_accumulation[env_ids], dim=1)  # type: ignore
+        * command_term.cfg.resampling_time_range[1]  # type: ignore
+        * (1.0 - command_term.zero_command_proba)  # type: ignore
+    )
+    # 如果机器人实际最大移动距离还不到理论目标距离的一半，就降级。
+    # 但如果已经满足 move_up，就不降级。
+    move_down = (distance < expected_distance * 0.5) & ~move_up
+    # move_up=True   -> terrain_levels + 1
+    # move_down=True -> terrain_levels - 1
+    # > 随机回到某个 level
+    # 低于 0 -> clamp 到 0
+    terrain.update_env_origins(env_ids, move_up, move_down) # type: ignore
+
     return torch.mean(terrain.terrain_levels.float())

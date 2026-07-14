@@ -1,18 +1,18 @@
 from isaaclab.utils import configclass
 
-from blank_rl_lab.tasks.manager_based.locomotion.velocity.agents.go2_rsl_rl_ppo_amp_cfg import Go2RslRlOnPolicyRunnerAmpCfg
+from blank_rl_lab.tasks.manager_based.locomotion.legged.velocity.agents.go2_rsl_rl_ppo_amp_cfg import Go2RslRlOnPolicyRunnerAmpCfg
 from blank_rl_lab.rsl_rl import RslRlPpoAmpAlgorithmCfg, RslRlAmpCfg
 
 @configclass
 class Go2RslRlOnPolicyRunnerAmpRoughCfg(Go2RslRlOnPolicyRunnerAmpCfg):
     num_steps_per_env = 24
-    max_iterations = 50000
+    max_iterations = 4000
     save_interval = 200
-    run_name = "rough_finetune"
+    run_name = "rough_from_flat_3999"
     resume = True
-    load_optimizer = False
-    load_run = "Go2_ampflat_resume"
-    load_checkpoint = "model_2999.pt"
+    load_optimizer: bool = False
+    load_run = "2026-07-14_17-28-59"
+    load_checkpoint = "model_3999.pt"
 
     algorithm = RslRlPpoAmpAlgorithmCfg(
         class_name="PPOAMP",
@@ -22,7 +22,7 @@ class Go2RslRlOnPolicyRunnerAmpRoughCfg(Go2RslRlOnPolicyRunnerAmpCfg):
         entropy_coef=0.01,
         num_learning_epochs=5,
         num_mini_batches=4,
-        learning_rate=1.0e-3,
+        learning_rate=3.0e-4,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,

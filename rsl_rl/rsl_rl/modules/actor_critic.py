@@ -78,12 +78,12 @@ class ActorCritic(nn.Module):
         # Action noise
         self.noise_std_type = noise_std_type
         if self.state_dependent_std:
-            torch.nn.init.zeros_(self.actor[-2].weight[num_actions:])
+            torch.nn.init.zeros_(self.actor[-2].weight[num_actions:])   # type:ignore
             if self.noise_std_type == "scalar":
-                torch.nn.init.constant_(self.actor[-2].bias[num_actions:], init_noise_std)
+                torch.nn.init.constant_(self.actor[-2].bias[num_actions:], init_noise_std) # type:ignore
             elif self.noise_std_type == "log":
                 torch.nn.init.constant_(
-                    self.actor[-2].bias[num_actions:], torch.log(torch.tensor(init_noise_std + 1e-7))
+                    self.actor[-2].bias[num_actions:], torch.log(torch.tensor(init_noise_std + 1e-7)) # type:ignore
                 )
             else:
                 raise ValueError(f"Unknown standard deviation type: {self.noise_std_type}. Should be 'scalar' or 'log'")
@@ -119,15 +119,15 @@ class ActorCritic(nn.Module):
 
     @property
     def action_mean(self) -> torch.Tensor:
-        return self.distribution.mean
+        return self.distribution.mean       # type:ignore
 
     @property
     def action_std(self) -> torch.Tensor:
-        return self.distribution.stddev
+        return self.distribution.stddev     # type:ignore
 
     @property
     def entropy(self) -> torch.Tensor:
-        return self.distribution.entropy().sum(dim=-1)
+        return self.distribution.entropy().sum(dim=-1) # type:ignore
 
     def _update_distribution(self, obs: torch.Tensor) -> None:
         if self.state_dependent_std:
@@ -156,13 +156,13 @@ class ActorCritic(nn.Module):
         self.distribution = Normal(mean, std)
 
     def act(self, obs: TensorDict, **kwargs: dict[str, Any]) -> torch.Tensor:
-        obs = self.get_actor_obs(obs)
+        obs = self.get_actor_obs(obs) # type:ignore
         obs = self.actor_obs_normalizer(obs)
         self._update_distribution(obs)
-        return self.distribution.sample()
+        return self.distribution.sample() # type:ignore
 
     def act_inference(self, obs: TensorDict) -> torch.Tensor:
-        obs = self.get_actor_obs(obs)
+        obs = self.get_actor_obs(obs)     # type:ignore
         obs = self.actor_obs_normalizer(obs)
         if self.state_dependent_std:
             return self.actor(obs)[..., 0, :]
@@ -170,7 +170,7 @@ class ActorCritic(nn.Module):
             return self.actor(obs)
 
     def evaluate(self, obs: TensorDict, **kwargs: dict[str, Any]) -> torch.Tensor:
-        obs = self.get_critic_obs(obs)
+        obs = self.get_critic_obs(obs)  # type:ignore
         obs = self.critic_obs_normalizer(obs)
         return self.critic(obs)
 
@@ -183,15 +183,15 @@ class ActorCritic(nn.Module):
         return torch.cat(obs_list, dim=-1)
 
     def get_actions_log_prob(self, actions: torch.Tensor) -> torch.Tensor:
-        return self.distribution.log_prob(actions).sum(dim=-1)
+        return self.distribution.log_prob(actions).sum(dim=-1) # type:ignore
 
     def update_normalization(self, obs: TensorDict) -> None:
         if self.actor_obs_normalization:
             actor_obs = self.get_actor_obs(obs)
-            self.actor_obs_normalizer.update(actor_obs)
+            self.actor_obs_normalizer.update(actor_obs) # type:ignore
         if self.critic_obs_normalization:
             critic_obs = self.get_critic_obs(obs)
-            self.critic_obs_normalizer.update(critic_obs)
+            self.critic_obs_normalizer.update(critic_obs) # type:ignore
 
     def load_state_dict(self, state_dict: dict, strict: bool = True) -> bool:
         """Load the parameters of the actor-critic model.

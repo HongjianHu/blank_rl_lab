@@ -21,9 +21,19 @@ from isaaclab.terrains import TerrainImporterCfg, TerrainGeneratorCfg
 import isaaclab.terrains as terrain_gen
 
 from blank_rl_lab.assets.robot.unitree import UNITREE_GO2_CFG as RobotCFG
-from blank_rl_lab.tasks.manager_based.locomotion.velocity import mdp
-from blank_rl_lab.tasks.manager_based.locomotion.velocity.amp_go2_velocity import Go2RobotAMPEnvCfg
-from blank_rl_lab.tasks.manager_based.locomotion.velocity.amp_go2_velocity import RewardsCfg as AmpRewardsCfg
+from blank_rl_lab.tasks.manager_based.locomotion.legged.velocity import mdp
+from blank_rl_lab.tasks.manager_based.locomotion.legged.velocity.amp_go2_velocity import Go2RobotAMPEnvCfg
+from blank_rl_lab.tasks.manager_based.locomotion.legged.velocity.amp_go2_velocity import ObservationsCfg as AmpObservationsCfg
+from blank_rl_lab.tasks.manager_based.locomotion.legged.velocity.amp_go2_velocity import RewardsCfg as AmpRewardsCfg
+
+ROUGH_AMP_MOTION_WEIGHTS = {
+    "go2_forward": 0.35,
+    "go2_forward_fast": 0.35,
+    "go2_forward_faster": 0.08,
+    "go2_turn_left": 0.10,
+    "go2_turn_right": 0.10,
+    "go2_stance": 0.02,
+}
 
 COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
     size=(8.0, 8.0),
@@ -129,21 +139,43 @@ class RoughSceneCfg(InteractiveSceneCfg):
         ),
     )
 
+# @configclass
+# class CommandsCfg:
+#     """Command specifications for the MDP."""
+#     base_velocity = mdp.UniformLevelVelocityCommandCfg(
+#         asset_name="robot",
+#         resampling_time_range=(10.0, 10.0),
+#         rel_standing_envs=0.02,
+#         debug_vis=True,
+#         ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
+#             lin_vel_x=(0.2, 1.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(-0.5, 0.5)
+#         ),
+#         limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
+#             lin_vel_x=(0.2, 2.0), lin_vel_y=(-0.2, 0.2), ang_vel_z=(-0.8, 0.8)
+#         ),
+#     )
+
 @configclass
 class CommandsCfg:
-    """Command specifications for the MDP."""
+    """Velocity commands for the first rough-terrain AMP stage."""
+
     base_velocity = mdp.UniformLevelVelocityCommandCfg(
         asset_name="robot",
         resampling_time_range=(10.0, 10.0),
         rel_standing_envs=0.02,
         debug_vis=True,
         ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(0.2, 1.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(-0.5, 0.5)
+            lin_vel_x=(0.2, 1.0),
+            lin_vel_y=(0.0, 0.0),
+            ang_vel_z=(-0.3, 0.3),
         ),
         limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(0.2, 2.0), lin_vel_y=(-0.2, 0.2), ang_vel_z=(-0.8, 0.8)
+            lin_vel_x=(0.2, 1.0),
+            lin_vel_y=(0.0, 0.0),
+            ang_vel_z=(-0.3, 0.3),
         ),
     )
+
 
 @configclass
 class RoughRewardsCfg(AmpRewardsCfg):
@@ -168,14 +200,46 @@ class RoughRewardsCfg(AmpRewardsCfg):
         },
     )
 
+    dof_power = RewTerm(
+    func=mdp.dof_power_l1,
+    weight=-1.0e-5,
+    params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=[".*"]),
+    },
+    )
+
+    feet_stumble = RewTerm(
+    func=mdp.feet_stumble,
+    weight=-0.5,
+    params={
+        "sensor_cfg": SceneEntityCfg(
+            "contact_forces",
+            body_names=".*_foot",
+        ),
+        "ratio": 4.0,
+    },
+    )
+
+    # base_height = RewTerm(
+    #     func=mdp.safe_base_height_l2,
+    #     weight=-2.0,
+    #     params={
+    #         "target_height": 0.3,
+    #         "asset_cfg": SceneEntityCfg("robot"),
+    #         "sensor_cfg": SceneEntityCfg("height_scanner"),
+    #     },
+    # )
+
     base_height = RewTerm(
-        func=mdp.safe_base_height_l2,
-        weight=-2.0,
-        params={
-            "target_height": 0.3,
-            "asset_cfg": SceneEntityCfg("robot"),
-            "sensor_cfg": SceneEntityCfg("height_scanner"),
-        },
+    func=mdp.go2_correct_base_height_l2,
+    weight=-1.0,
+    params={
+        "target_height": 0.3,
+        "sensor_cfg": SceneEntityCfg("height_scanner"),
+        "asset_cfg": SceneEntityCfg("robot"),
+        "x_bounds": (-0.2, 0.2),
+        "y_bounds": (-0.15, 0.15),
+    },
     )
 
 @configclass
@@ -188,6 +252,19 @@ class GO2RobotAMPRoughEnvCfg(Go2RobotAMPEnvCfg):
     """Configuration for the GO2 robot environment with rough terrain."""
     scene: RoughSceneCfg = RoughSceneCfg(num_envs=4096, env_spacing=2.5)
 
+    # observations: RoughObservationsCfg = RoughObservationsCfg()
     commands: CommandsCfg = CommandsCfg()
     rewards: RoughRewardsCfg = RoughRewardsCfg()
     curriculum: CurriculumCfg = CurriculumCfg()
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        self.motion_data.motion_dataset.motion_data_weights = ROUGH_AMP_MOTION_WEIGHTS.copy()
+
+        # Flat demonstrations contain an origin-relative root height. On rough
+        # terrain that quantity changes with terrain elevation and lets the
+        # discriminator reject otherwise valid climbing motions. Remove it from
+        # both sides so policy and demonstration AMP observations remain aligned.
+        self.observations.disc.amp_obs.params["include_root_height"] = False
+        self.observations.disc_demo.ref_amp_obs.params["include_root_height"] = False

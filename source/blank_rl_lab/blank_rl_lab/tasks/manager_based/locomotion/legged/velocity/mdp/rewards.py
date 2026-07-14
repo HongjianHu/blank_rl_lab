@@ -196,7 +196,7 @@ def feet_contact_stand_still(env: ManagerBasedRLEnv, command_name: str, sensor_c
 def feet_stumble(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, ratio: float=4.0) -> torch.Tensor:
     contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name] #type:ignore
     history = contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :] #type:ignore
-    lateral_t = torch.norm(history[..., :2], dim=-1) 
+    lateral_t = torch.norm(history[..., :2], dim=-1)
     vertical_t = torch.abs(history[..., 2])
     lateral_max = torch.max(lateral_t, dim=1)[0]
     vertical_max = torch.max(vertical_t, dim=1)[0]
@@ -206,3 +206,158 @@ def hip_pos_deviation(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg=SceneEnt
     asset: Articulation = env.scene[asset_cfg.name]
     err = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
     return torch.sum(torch.square(err), dim=-1)
+
+#=======================CTS-MOSE=====================================#
+def _go2_estimated_ground_z_from_scan(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg,
+    x_bounds: tuple[float, float],
+    y_bounds: tuple[float, float],
+    target_height: float,
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    sensor: RayCaster = env.scene.sensors[sensor_cfg.name] # type:ignore
+
+    base_z = asset.data.root_pos_w[:, 2]
+    ray_heights = sensor.data.ray_hits_w[..., 2]
+
+    ray_xy = sensor.ray_starts[0, :, :2]
+    local_mask = (
+        (ray_xy[:, 0] >= x_bounds[0])
+        & (ray_xy[:, 0] <= x_bounds[1])
+        & (ray_xy[:, 1] >= y_bounds[0])
+        & (ray_xy[:, 1] <= y_bounds[1])
+    )
+
+    valid_hits = torch.isfinite(ray_heights) & local_mask.unsqueeze(0)
+    safe_heights = torch.where(valid_hits, ray_heights, torch.zeros_like(ray_heights))
+
+    hit_count = valid_hits.sum(dim=1).clamp(min=1)
+    ground_z = safe_heights.sum(dim=1) / hit_count
+
+    fallback_ground_z = base_z - target_height
+    ground_z = torch.where(valid_hits.any(dim=1), ground_z, fallback_ground_z)
+    return ground_z
+
+
+def go2_correct_base_height_l2(
+    env: ManagerBasedRLEnv,
+    target_height: float,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    x_bounds: tuple[float, float] = (-0.2, 0.2),
+    y_bounds: tuple[float, float] = (-0.15, 0.15),
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    ground_z = _go2_estimated_ground_z_from_scan(env, sensor_cfg, asset_cfg, x_bounds, y_bounds, target_height)
+    base_height = asset.data.root_pos_w[:, 2] - ground_z
+    return torch.square(base_height - target_height)
+
+
+def go2_feet_regulation(
+    env: ManagerBasedRLEnv,
+    target_height: float,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg,
+    x_bounds: tuple[float, float] = (-0.2, 0.2),
+    y_bounds: tuple[float, float] = (-0.15, 0.15),
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    ground_z = _go2_estimated_ground_z_from_scan(env, sensor_cfg, SceneEntityCfg("robot"), x_bounds, y_bounds, target_height)
+
+    feet_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]
+    feet_vel_xy = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2]
+    feet_height = torch.clamp(feet_z - ground_z.unsqueeze(-1), min=0.0)
+
+    return torch.sum(
+        torch.sum(torch.square(feet_vel_xy), dim=-1)
+        * torch.exp(-feet_height / (0.025 * target_height)),
+        dim=-1,
+    )
+
+
+def go2_hip_to_default_l1(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    hip_error = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+    return torch.sum(torch.abs(hip_error), dim=-1)
+
+def _go2_build_terrain_type_names(env: ManagerBasedRLEnv) -> list[str] | None:
+    terrain = getattr(env.scene, "terrain", None)
+    if terrain is None or terrain.cfg.terrain_generator is None:
+        return None
+
+    cache_name = "_go2_dynamic_sigma_terrain_type_names"
+    if hasattr(env, cache_name):
+        return getattr(env, cache_name)
+
+    terrain_gen_cfg = terrain.cfg.terrain_generator
+    sub_terrains = terrain_gen_cfg.sub_terrains
+    num_cols = terrain_gen_cfg.num_cols
+
+    proportions = torch.tensor(
+        [sub_cfg.proportion for sub_cfg in sub_terrains.values()],
+        device=env.device,
+        dtype=torch.float,
+    )
+    proportions = proportions / torch.sum(proportions)
+    cumulative = torch.cumsum(proportions, dim=0)
+
+    terrain_names = list(sub_terrains.keys())
+    col_to_name: list[str] = []
+
+    for col in range(num_cols):
+        choice = col / num_cols + 0.001
+        terrain_idx = int(torch.nonzero(choice < cumulative, as_tuple=False)[0].item())
+        col_to_name.append(terrain_names[terrain_idx])
+
+    setattr(env, cache_name, col_to_name)
+    return col_to_name
+
+
+def _go2_dynamic_sigma(
+    env: ManagerBasedRLEnv,
+    target_vel_abs: torch.Tensor,
+    v_min: float,
+    v_max: float,
+    default_sigma: float,
+    max_sigma_by_terrain: dict[str, float],
+) -> torch.Tensor:
+    sigma = torch.full_like(target_vel_abs, default_sigma)
+
+    terrain = getattr(env.scene, "terrain", None)
+    if terrain is None or not hasattr(terrain, "terrain_types") or not hasattr(terrain, "terrain_levels"):
+        return sigma
+
+    col_to_name = _go2_build_terrain_type_names(env)
+    if col_to_name is None:
+        return sigma
+
+    max_sigma_by_col = torch.tensor(
+        [max_sigma_by_terrain.get(name, default_sigma) for name in col_to_name],
+        device=env.device,
+        dtype=torch.float,
+    )
+
+    terrain_types = terrain.terrain_types.clamp(max=len(col_to_name) - 1)
+
+    target_sigmas = max_sigma_by_col[terrain_types]
+
+    interp_mask = (target_vel_abs >= v_min) & (target_vel_abs < v_max)
+    if torch.any(interp_mask):
+        ratio = (target_vel_abs[interp_mask] - v_min) / (v_max - v_min)
+        sigma[interp_mask] = default_sigma + ratio * (target_sigmas[interp_mask] - default_sigma)
+
+    max_mask = target_vel_abs >= v_max
+    if torch.any(max_mask):
+        sigma[max_mask] = target_sigmas[max_mask]
+
+    # 表示 terrain level 越高，sigma 放宽越明显。低 level 不会一下子把 tracking reward 放得太松。
+    level_scale = torch.clamp(torch.exp((terrain.terrain_levels.float() + 1.0) / 10.0) - 1.0, max=1.0)
+
+    sigma = default_sigma + level_scale * (sigma - default_sigma)
+
+    return sigma

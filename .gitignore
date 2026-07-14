@@ -79,3 +79,9 @@ tests/
 source/blank_rl_lab/blank_rl_lab/datasets
 
 **/checkpoints/*
+
+MEMORY.md
+
+.agents
+.claude
+.codex

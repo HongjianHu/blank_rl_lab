@@ -25,7 +25,7 @@ from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 from isaaclab.terrains import TerrainImporterCfg, TerrainGeneratorCfg
 import isaaclab.terrains as terrain_gen
 
-from blank_rl_lab.tasks.manager_based.locomotion.velocity import mdp
+from blank_rl_lab.tasks.manager_based.locomotion.legged.velocity import mdp
 from blank_rl_lab.assets.robot.unitree import UNITREE_GO2_CFG as RobotCFG
 ##
 # Pre-defined configs

@@ -60,3 +60,23 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.go2_rsl_rl_tsdepth_cfg:Go2TSDepthRunnerCfg",
     },
 )
+
+gym.register(
+    id="Go2-CTS-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point":f"{__name__}.go2_cts_moe_env_cfg:CTSMoeRoughEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.go2_rsl_rl_cts_cfg:Go2CtsRunnerCfg",
+    },
+)
+
+gym.register(
+    id="Go2-CTSMoe-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point":f"{__name__}.go2_cts_moe_env_cfg:CTSMoeRoughEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.go2_rsl_rl_ctsmoe_cfg:Go2MoENGCtsRunnerCfg",
+    },
+)

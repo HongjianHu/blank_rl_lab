@@ -21,6 +21,51 @@ class RslRlPpoAmpAlgorithmCfg(RslRlPpoAlgorithmCfg):
 
 
 @configclass
+class RslRlCtsActorCriticCfg(RslRlPpoActorCriticCfg):
+    """Configuration for the concurrent teacher-student actor-critic."""
+
+    class_name: str = "ActorCriticCTS"
+    history_length: int = 5
+    teacher_encoder_hidden_dims: list[int] = [512, 256]
+    student_encoder_hidden_dims: list[int] = [512, 256]
+    latent_dim: int = 32
+    norm_type: Literal["l2norm", "simnorm"] = "l2norm"
+    simnorm_group_dim: int = 8
+
+
+@configclass
+class RslRlCtsAlgorithmCfg(RslRlPpoAlgorithmCfg):
+    """Configuration for concurrent teacher-student PPO optimization."""
+
+    class_name: str = "CTS"
+    student_encoder_learning_rate: float = 1.0e-3
+    teacher_env_ratio: float = 0.75
+
+@configclass
+class RslRlMoENGCTSActorCriticCfg(RslRlCtsActorCriticCfg):
+    """Configuration for the no-goal Student MoE CTS policy."""
+
+    class_name: str = "ActorCriticMoENGCTS"
+
+    obs_no_goal_mask: list[bool] = MISSING  # type: ignore
+    """Mask applied to each policy-observation frame."""
+
+    student_expert_num: int = 8
+    """Number of Student experts."""
+
+    student_expert_hidden_dim: int = 256
+    """Hidden dimension of every grouped Expert head."""
+
+@configclass
+class RslRlMoENGCTSAlgorithmCfg(RslRlCtsAlgorithmCfg):
+    """Configuration for MoE concurrent teacher-student training."""
+
+    class_name: str = "MoENGCTS"
+
+    load_balance_coef: float = 0.01
+    """Weight of the Gate load-balance loss."""
+
+@configclass
 class RslRlBaseRunnerCfg:
     """Base configuration of the runner."""
 

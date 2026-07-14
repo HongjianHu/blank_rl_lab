@@ -20,6 +20,10 @@ from .utils import (
     string_to_callable,
 )
 from .wandb_log_writer import WandbLogWriter
+from .cts_exporter import (
+    export_cts_policy_as_jit,
+    export_cts_policy_as_onnx,
+)
 
 __all__ = [
     "LogWriter",
@@ -35,4 +39,6 @@ __all__ = [
     "split_and_pad_trajectories",
     "unpad_trajectories",
     "string_to_callable",
+    "export_cts_policy_as_jit",
+    "export_cts_policy_as_onnx",
 ]

@@ -377,7 +377,7 @@ class PPO:
             nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
             self.optimizer.step()
             if getattr(self.policy, "noise_std_type", None) == "scalar" and hasattr(self.policy, "_positive_std"):
-                self.policy._positive_std()
+                self.policy._positive_std() # type:ignore
             # Apply the gradients for RND
             if self.rnd:
                 self.rnd_optimizer.step() #type:ignore
@@ -419,6 +419,52 @@ class PPO:
         self.storage.clear()
 
         return loss_dict
+
+    def broadcast_parameters(self) -> None:
+        """Broadcast model parameters to all GPUs."""
+        # Obtain the model parameters on current GPU
+        model_params = [self.policy.state_dict()]
+        if self.rnd:
+            model_params.append(self.rnd.predictor.state_dict())
+        # Broadcast the model parameters
+        torch.distributed.broadcast_object_list(model_params, src=0)
+        # Load the model parameters on all GPUs from source GPU
+        self.policy.load_state_dict(model_params[0])
+        if self.rnd:
+            self.rnd.predictor.load_state_dict(model_params[1])
+
+    def reduce_parameters(self) -> None:
+        """Collect gradients from all GPUs and average them.
+
+        This function is called after the backward pass to synchronize the gradients across all GPUs.
+        """
+        # Create a tensor to store the gradients
+        grads = [param.grad.view(-1) for param in self.policy.parameters() if param.grad is not None]
+        if self.rnd:
+            grads += [param.grad.view(-1) for param in self.rnd.parameters() if param.grad is not None]
+        all_grads = torch.cat(grads)
+
+        # Average the gradients across all GPUs
+        torch.distributed.all_reduce(all_grads, op=torch.distributed.ReduceOp.SUM)
+        all_grads /= self.gpu_world_size
+
+
+        # Get all parameters
+        all_params = self.policy.parameters()
+        if self.rnd:
+            all_params = chain(all_params, self.rnd.parameters())
+        # Update the gradients for all parameters with the reduced gradients
+        offset = 0
+        for param in all_params:
+            if param.grad is not None:
+                numel = param.numel()
+                # Copy data back from shared buffer
+                param.grad.data.copy_(all_grads[offset : offset + numel].view_as(param.grad.data))
+                # Update the offset for the next parameter
+                offset += numel
+
+
+
 
     # def train_mode(self) -> None:
     #     """Set train mode for learnable models."""
@@ -519,46 +565,3 @@ class PPO:
     #     alg.compile(cfg.get("torch_compile_mode"))
 
     #     return alg
-
-    def broadcast_parameters(self) -> None:
-        """Broadcast model parameters to all GPUs."""
-        # Obtain the model parameters on current GPU
-        model_params = [self.policy.state_dict()]
-        if self.rnd:
-            model_params.append(self.rnd.predictor.state_dict())
-        # Broadcast the model parameters
-        torch.distributed.broadcast_object_list(model_params, src=0)
-        # Load the model parameters on all GPUs from source GPU
-        self.policy.load_state_dict(model_params[0])
-        if self.rnd:
-            self.rnd.predictor.load_state_dict(model_params[1])
-
-    def reduce_parameters(self) -> None:
-        """Collect gradients from all GPUs and average them.
-
-        This function is called after the backward pass to synchronize the gradients across all GPUs.
-        """
-        # Create a tensor to store the gradients
-        grads = [param.grad.view(-1) for param in self.policy.parameters() if param.grad is not None]
-        if self.rnd:
-            grads += [param.grad.view(-1) for param in self.rnd.parameters() if param.grad is not None]
-        all_grads = torch.cat(grads)
-
-        # Average the gradients across all GPUs
-        torch.distributed.all_reduce(all_grads, op=torch.distributed.ReduceOp.SUM)
-        all_grads /= self.gpu_world_size
-
-
-        # Get all parameters
-        all_params = self.policy.parameters()
-        if self.rnd:
-            all_params = chain(all_params, self.rnd.parameters())
-        # Update the gradients for all parameters with the reduced gradients
-        offset = 0
-        for param in all_params:
-            if param.grad is not None:
-                numel = param.numel()
-                # Copy data back from shared buffer
-                param.grad.data.copy_(all_grads[offset : offset + numel].view_as(param.grad.data))
-                # Update the offset for the next parameter
-                offset += numel

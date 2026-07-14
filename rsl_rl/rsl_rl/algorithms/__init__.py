@@ -8,5 +8,13 @@
 from .distillation import Distillation
 from .ppo import PPO
 from .ppo_amp import PPOAMP
+from .cts import CTS
+from .moe_ng_cts import MoENGCTS
 
-__all__ = ["PPO", "Distillation"]
+__all__ = [
+    "PPO",
+    "Distillation",
+    "PPOAMP",
+    "CTS",
+    "MoENGCTS",
+    ]
