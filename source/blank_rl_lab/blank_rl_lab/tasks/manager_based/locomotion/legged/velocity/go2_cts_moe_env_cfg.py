@@ -3,7 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-import math
 from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
@@ -22,70 +21,78 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
-from isaaclab.terrains import TerrainImporterCfg, TerrainGeneratorCfg
 import isaaclab.terrains as terrain_gen
 
 from blank_rl_lab.tasks.manager_based.locomotion.legged.velocity import mdp
 from blank_rl_lab.assets.robot.unitree import UNITREE_GO2_CFG as RobotCFG
 
-from isaaclab.terrains.config.rough import ROUGH_TERRAINS_CFG  # isort: skip
-
-COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
+GO2_LEGACY_TERRAINS_CFG = terrain_gen.TerrainGeneratorCfg(
     size=(8.0, 8.0),
     border_width=20.0,
     num_rows=10,
     num_cols=20,
     horizontal_scale=0.1,
     vertical_scale=0.005,
-    slope_threshold=None,
+    slope_threshold=1.5,
     difficulty_range=(0.0, 1.0),
     use_cache=False,
     sub_terrains={
-        "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.20),
-        "smooth_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
+        # The legacy generator overlays +/-5 cm random roughness on both the
+        # wave and rough-slope height fields. IsaacLab's built-in primitives
+        # cannot compose those two height fields, so the base geometry,
+        # proportions, and difficulty ranges are matched here while that
+        # additive roughness remains an approximation.
+        "wave": terrain_gen.HfWaveTerrainCfg(
             proportion=0.05,
-            slope_range=(0.0, 0.04),
+            amplitude_range=(0.1, 0.3),
+            num_waves=5,
+            border_width=0.25,
+        ),
+        "slope": terrain_gen.HfPyramidSlopedTerrainCfg(
+            proportion=0.10,
+            slope_range=(0.1, 0.62),
             platform_width=3.0,
             border_width=0.25,
         ),
-        "smooth_slope_inv": terrain_gen.HfInvertedPyramidSlopedTerrainCfg(
-            proportion=0.05,
-            slope_range=(0.0, 0.04),
+        "slope_inv": terrain_gen.HfInvertedPyramidSlopedTerrainCfg(
+            proportion=0.10,
+            slope_range=(0.1, 0.62),
             platform_width=3.0,
             border_width=0.25,
         ),
-        "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
-            proportion=0.15,
-            noise_range=(0.0, 0.05),
-            noise_step=0.005,
-            downsampled_scale=0.2,
+        "rough_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
+            proportion=0.05,
+            slope_range=(0.1, 0.62),
+            platform_width=3.0,
             border_width=0.25,
         ),
-        "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
-            proportion=0.20,
-            step_height_range=(0.05, 0.07),
+        # The robot starts on the center platform. In the legacy generator,
+        # stairs_up uses a negative step height, which is IsaacLab's inverted
+        # pyramid: the center is low and walking outwards goes uphill.
+        "stairs_up": terrain_gen.HfInvertedPyramidStairsTerrainCfg(
+            proportion=0.25,
+            step_height_range=(0.05, 0.28),
             step_width=0.31,
             platform_width=3.0,
-            border_width=1.0,
-            holes=False,
+            border_width=0.25,
         ),
-        "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-            proportion=0.15,
-            step_height_range=(0.05, 0.07),
+        "stairs_down": terrain_gen.HfPyramidStairsTerrainCfg(
+            proportion=0.10,
+            step_height_range=(0.05, 0.28),
             step_width=0.31,
             platform_width=3.0,
-            border_width=1.0,
-            holes=False,
+            border_width=0.25,
         ),
-        "discrete_obstacles": terrain_gen.HfDiscreteObstaclesTerrainCfg(
+        "obstacles": terrain_gen.HfDiscreteObstaclesTerrainCfg(
             proportion=0.20,
             obstacle_height_mode="choice",
             obstacle_width_range=(1.0, 2.0),
-            obstacle_height_range=(0.05, 0.07),
+            obstacle_height_range=(0.05, 0.30),
             num_obstacles=20,
             platform_width=3.0,
             border_width=0.25,
         ),
+        "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.15),
     },
 )
 
@@ -94,7 +101,7 @@ class CTSMoESceneCfg(InteractiveSceneCfg):
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="generator",
-        terrain_generator=ROUGH_TERRAINS_CFG,
+        terrain_generator=GO2_LEGACY_TERRAINS_CFG,
         max_init_terrain_level=5,
         collision_group=-1,
         physics_material=sim_utils.RigidBodyMaterialCfg(
@@ -182,13 +189,13 @@ class CommandsCfg:
             "ang_vel_z": (-2.0, 2.0),
         },
         {
-            "terrain_names": ("smooth_slope", "smooth_slope_inv", "random_rough"),
+            "terrain_names": ("wave", "slope", "slope_inv", "rough_slope"),
             "lin_vel_x": (-1.5, 1.5),
             "lin_vel_y": (-1.0, 1.0),
             "ang_vel_z": (-1.5, 1.5),
         },
         {
-            "terrain_names": ("pyramid_stairs", "pyramid_stairs_inv", "discrete_obstacles"),
+            "terrain_names": ("stairs_up", "stairs_down", "obstacles"),
             "lin_vel_x": (-1.0, 1.0),
             "lin_vel_y": (-1.0, 1.0),
             "ang_vel_z": (-1.5, 1.5),
@@ -215,25 +222,37 @@ class ObservationsCfg:
     @configclass
     class PolicyCfg(ObsGroup):
         # base_lin_vel = ObsTerm(func=mdp.base_lin_vel, noise=Unoise(n_min=-0.1, n_max=0.1))
-        base_ang_vel = ObsTerm(func=mdp.base_ang_vel, scale=0.25, noise=Unoise(n_min=-0.2, n_max=0.2)) # 3
+        base_ang_vel = ObsTerm(
+            func=mdp.base_ang_vel,
+            scale=0.25,
+            noise=Unoise(n_min=-0.2, n_max=0.2),
+            # ObservationManager clips before scaling. +/-400 becomes the
+            # legacy final +/-100 bound after multiplying by 0.25.
+            clip=(-400.0, 400.0),
+        ) # 3
         projected_gravity = ObsTerm(
             func=mdp.projected_gravity,
             noise=Unoise(n_min=-0.05, n_max=0.05),
+            clip=(-100.0, 100.0),
         )
         velocity_commands = ObsTerm(
             func=mdp.generated_commands,
             params={"command_name": "base_velocity"},
             scale=(2.0, 2.0, 0.25),
+            clip=(-100.0, 100.0),
             )
         joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,
-            noise=Unoise(n_min=-0.01, n_max=0.01)
+            noise=Unoise(n_min=-0.01, n_max=0.01),
+            clip=(-100.0, 100.0),
             )
         joint_vel = ObsTerm(
             func=mdp.joint_vel_rel,
-            noise=Unoise(n_min=-1.5, n_max=1.5)
+            scale=0.05,
+            noise=Unoise(n_min=-1.5, n_max=1.5),
+            clip=(-2000.0, 2000.0),
             )
-        actions = ObsTerm(func=mdp.last_action)
+        actions = ObsTerm(func=mdp.last_action, clip=(-100.0, 100.0))
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -244,27 +263,30 @@ class ObservationsCfg:
 
     @configclass
     class CriticCfg(ObsGroup):
-        base_lin_vel = ObsTerm(func=mdp.base_lin_vel, scale=2.0)
-        base_ang_vel = ObsTerm(func=mdp.base_ang_vel, scale=0.25)
-        projected_gravity = ObsTerm(func=mdp.projected_gravity)
+        base_lin_vel = ObsTerm(func=mdp.base_lin_vel, scale=2.0, clip=(-50.0, 50.0))
+        base_ang_vel = ObsTerm(func=mdp.base_ang_vel, scale=0.25, clip=(-400.0, 400.0))
+        projected_gravity = ObsTerm(func=mdp.projected_gravity, clip=(-100.0, 100.0))
         velocity_commands = ObsTerm(
             func=mdp.generated_commands,
             params={"command_name": "base_velocity"},
             scale=(2.0, 2.0, 0.25),
+            clip=(-100.0, 100.0),
         )
-        joint_pos = ObsTerm(func=mdp.joint_pos_rel)
-        joint_vel = ObsTerm(func=mdp.joint_vel_rel, scale=0.05)
-        actions = ObsTerm(func=mdp.last_action)
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel, clip=(-100.0, 100.0))
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel, scale=0.05, clip=(-2000.0, 2000.0))
+        actions = ObsTerm(func=mdp.last_action, clip=(-100.0, 100.0))
         foot_contact_forces = ObsTerm(
             func=mdp.go2_foot_contact_forces,
             params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot")},
+            clip=(-100.0, 100.0),
         )
-        torques = ObsTerm(func=mdp.go2_joint_torques_normalized)
-        joint_acc = ObsTerm(func=mdp.go2_joint_acc_legacy_scaled)
+        torques = ObsTerm(func=mdp.go2_joint_torques_normalized, clip=(-100.0, 100.0))
+        joint_acc = ObsTerm(func=mdp.go2_joint_acc_legacy_scaled, clip=(-100.0, 100.0))
         height_scan = ObsTerm(
             func=mdp.go2_height_scan,
             params={"sensor_cfg": SceneEntityCfg("height_scanner"), "offset": 0.5},
             scale=2.5,
+            clip=(-40.0, 40.0),
         )
 
         def __post_init__(self):
@@ -280,8 +302,8 @@ class EventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "static_friction_range": (0.0, 2.0),
-            "dynamic_friction_range": (0.0, 2.0),
+            "static_friction_range": (0.2, 1.25),
+            "dynamic_friction_range": (0.2, 1.25),
             "restitution_range": (0.0, 0.5),
             "num_buckets": 64,
         },
@@ -379,14 +401,14 @@ class EventCfg:
 @configclass
 class RewardsCfg:
     track_lin_vel_xy_exp = RewTerm(
-        func=mdp.track_lin_vel_xy_exp,
+        func=mdp.go2_track_lin_vel_xy_exp,
         weight=1.0,
-        params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
+        params={"command_name": "base_velocity"},
     )
     track_ang_vel_z_exp = RewTerm(
-        func=mdp.track_ang_vel_z_exp,
+        func=mdp.go2_track_ang_vel_z_exp,
         weight=0.5,
-        params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
+        params={"command_name": "base_velocity"},
     )
     lin_vel_z = RewTerm(func=mdp.lin_vel_z_l2, weight=-2.0)
     ang_vel_xy_l2 = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.05)

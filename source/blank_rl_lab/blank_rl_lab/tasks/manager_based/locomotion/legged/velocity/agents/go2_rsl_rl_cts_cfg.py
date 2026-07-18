@@ -14,6 +14,7 @@ class Go2CtsRunnerCfg(RslRlOnPolicyRunnerCfg):
     save_interval = 500
     experiment_name = "go2_cts"
     empirical_normalization = False
+    clip_actions = 100.0
     obs_groups = {
         "policy": ["policy"],
         "critic": ["critic"],

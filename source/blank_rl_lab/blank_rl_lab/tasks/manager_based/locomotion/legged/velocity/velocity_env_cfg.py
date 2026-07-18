@@ -23,8 +23,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
-import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
-
+import blank_rl_lab.tasks.manager_based.locomotion.legged.velocity.mdp as mdp
 ##
 # Pre-defined configs
 ##
@@ -91,7 +90,7 @@ class MySceneCfg(InteractiveSceneCfg):
 class CommandsCfg:
     """Command specifications for the MDP."""
 
-    base_velocity = mdp.UniformVelocityCommandCfg(
+    base_velocity = mdp.UniformLevelVelocityCommandCfg(
         asset_name="robot",
         resampling_time_range=(10.0, 10.0),
         rel_standing_envs=0.02,
@@ -99,8 +98,17 @@ class CommandsCfg:
         heading_command=True,
         heading_control_stiffness=0.5,
         debug_vis=True,
-        ranges=mdp.UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(-1.0, 1.0), lin_vel_y=(-1.0, 1.0), ang_vel_z=(-1.0, 1.0), heading=(-math.pi, math.pi)
+        ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
+            lin_vel_x=(-0.1, 0.1),
+            lin_vel_y=(-0.1, 0.1),
+            ang_vel_z=(-0.1, 0.1),
+            heading=(-math.pi, math.pi),
+        ),
+        limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
+            lin_vel_x=(-1.0, 1.0),
+            lin_vel_y=(-1.0, 1.0),
+            ang_vel_z=(-1.0, 1.0),
+            heading=(-math.pi, math.pi),
         ),
     )
 
@@ -280,6 +288,19 @@ class CurriculumCfg:
 
     terrain_levels = CurrTerm(func=mdp.terrain_levels_vel) # type: ignore
 
+    command_levels_lin_vel = CurrTerm(
+        func=mdp.lin_vel_cmd_levels, # type:ignore
+        params={
+            "reward_term_name": "track_lin_vel_xy_exp",
+        },
+    )
+
+    command_levels_ang_vel = CurrTerm(
+        func=mdp.ang_vel_cmd_levels, # type:ignore
+        params={
+            "reward_term_name": "track_ang_vel_z_exp",
+        },
+    )
 
 ##
 # Environment configuration

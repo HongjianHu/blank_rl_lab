@@ -78,6 +78,19 @@ def test_shapes_and_distribution_interface() -> None:
     assert model.evaluate(obs, flat_history, is_teacher=False).shape == (NUM_ENVS, 1)
 
 
+def test_scalar_action_std_receives_policy_gradient() -> None:
+    model = make_model()
+    obs = make_obs()
+    history = torch.randn(NUM_ENVS, HISTORY_LENGTH, NUM_ACTOR_OBS)
+
+    actions = model.act(obs, history, is_teacher=True)
+    loss = -model.get_actions_log_prob(actions.detach()).mean()
+    loss.backward()
+
+    assert model.std.grad is not None
+    assert torch.count_nonzero(model.std.grad).item() > 0
+
+
 def test_gradient_isolation_matches_cts_design() -> None:
     torch.manual_seed(1)
     model = make_model()

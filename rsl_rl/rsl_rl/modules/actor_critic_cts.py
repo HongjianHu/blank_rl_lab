@@ -241,11 +241,10 @@ class ActorCriticCTS(nn.Module):
         action_mean = self.actor(actor_input)
 
         if self.noise_std_type == "scalar":
-            with torch.no_grad():
-                action_std = self.std.clamp(
-                    min=1.0e-6,
-                    max=10.0,
-                ).expand_as(action_mean)
+            action_std = self.std.clamp(
+                min=1.0e-6,
+                max=10.0,
+            ).expand_as(action_mean)
         else:
             log_std = self.log_std.clamp(min=-20.0, max=2.0)
             action_std = torch.exp(log_std).expand_as(action_mean)

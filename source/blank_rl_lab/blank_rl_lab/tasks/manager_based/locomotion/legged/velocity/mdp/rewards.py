@@ -361,3 +361,68 @@ def _go2_dynamic_sigma(
     sigma = default_sigma + level_scale * (sigma - default_sigma)
 
     return sigma
+
+
+_GO2_MAX_TRACKING_SIGMA_BY_TERRAIN = {
+    "wave": 5.0 / 12.0,
+    "slope": 1.0 / 4.0,
+    "slope_inv": 1.0 / 4.0,
+    "rough_slope": 1.0 / 4.0,
+    "stairs_up": 1.0 / 2.0,
+    "stairs_down": 1.0 / 2.0,
+    "obstacles": 3.0 / 4.0,
+    "flat": 1.0 / 4.0,
+}
+
+
+def go2_track_lin_vel_xy_exp(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Legacy Go2 XY tracking reward with command- and terrain-dependent sigma."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+
+    sigma_x = _go2_dynamic_sigma(
+        env,
+        torch.abs(command[:, 0]),
+        v_min=0.5,
+        v_max=1.5,
+        default_sigma=0.25,
+        max_sigma_by_terrain=_GO2_MAX_TRACKING_SIGMA_BY_TERRAIN,
+    )
+    sigma_y = _go2_dynamic_sigma(
+        env,
+        torch.abs(command[:, 1]),
+        v_min=0.5,
+        v_max=1.5,
+        default_sigma=0.25,
+        max_sigma_by_terrain=_GO2_MAX_TRACKING_SIGMA_BY_TERRAIN,
+    )
+
+    error_sq = torch.square(command[:, :2] - asset.data.root_lin_vel_b[:, :2])
+    scaled_error = error_sq[:, 0] / sigma_x + error_sq[:, 1] / sigma_y
+    return torch.exp(-scaled_error)
+
+
+def go2_track_ang_vel_z_exp(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Legacy Go2 yaw tracking reward with command- and terrain-dependent sigma."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+
+    sigma = _go2_dynamic_sigma(
+        env,
+        torch.abs(command[:, 2]),
+        v_min=1.0,
+        v_max=2.0,
+        default_sigma=0.25,
+        max_sigma_by_terrain=_GO2_MAX_TRACKING_SIGMA_BY_TERRAIN,
+    )
+
+    error_sq = torch.square(command[:, 2] - asset.data.root_ang_vel_b[:, 2])
+    return torch.exp(-error_sq / sigma)
