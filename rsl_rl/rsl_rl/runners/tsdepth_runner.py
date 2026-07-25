@@ -357,8 +357,8 @@ class TsDepthRunner(OnPolicyRunner):
         loaded_dict = torch.load(path, weights_only=False, map_location=map_location)
         self.alg.actor_critic.load_state_dict(loaded_dict['model_state_dict'])
         if load_optimizer:
-            # 蒸馏阶段 teacher_optimizer 不会被 step，跳过加载，避免
-            # 其过期的 Adam 动量覆盖 student_optimizer 中共享参数 (actor, std) 的状态
+            # 蒸馏阶段teacher_optimizer不会被step，跳过加载，避免
+            # 其过期的Adam动量覆盖student_optimizer中共享参数(actor, std)的状态
             if not self.alg.distillation and 'teacher_optimizer_state_dict' in loaded_dict:
                 try:
                     self.alg.teacher_optimizer.load_state_dict(loaded_dict['teacher_optimizer_state_dict'])

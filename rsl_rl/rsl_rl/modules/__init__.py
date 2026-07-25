@@ -19,6 +19,7 @@ from .actor_critic_moe_ng_cts import (
     ActorCriticMoENGCTS,
     StudentMoEEncoder,
 )
+from .actor_critic_dwaq import ActorCriticDWAQ
 
 __all__ = [
     "ActorCritic",
@@ -35,4 +36,5 @@ __all__ = [
     "ActorCriticCTS",
     "StudentMoEEncoder",
     "ActorCriticMoENGCTS",
+    "ActorCriticDWAQ",
 ]

@@ -165,8 +165,8 @@ class RolloutStorage:
         """Yield shuffled flat mini-batches for feedforward RL updates."""
         if self.training_type != "rl":
             raise ValueError("This function is only available for reinforcement learning training.")
-        batch_size = self.num_envs * self.num_transitions_per_env
-        mini_batch_size = batch_size // num_mini_batches
+        batch_size = self.num_envs * self.num_transitions_per_env # 总样本数 = num_transitions_per_env × num_envs
+        mini_batch_size = batch_size // num_mini_batches    # 切成num_mini_batches个小批量，然后随机打乱，
         indices = torch.randperm(num_mini_batches * mini_batch_size, requires_grad=False, device=self.device)
 
         # Flatten the data
@@ -181,7 +181,7 @@ class RolloutStorage:
         old_mu = self.mu.flatten(0, 1)
         old_sigma = self.sigma.flatten(0, 1)
 
-        for epoch in range(num_epochs):
+        for epoch in range(num_epochs): # 这些数据会反复被喂给网络训练num_learning_epochs轮
             for i in range(num_mini_batches):
                 # Select the indices for the mini-batch
                 start = i * mini_batch_size

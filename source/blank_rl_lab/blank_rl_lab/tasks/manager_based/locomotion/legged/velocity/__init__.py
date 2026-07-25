@@ -80,3 +80,13 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.go2_rsl_rl_ctsmoe_cfg:Go2MoENGCtsRunnerCfg",
     },
 )
+
+gym.register(
+    id="Go2-DWAQ-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point":f"{__name__}.go2_dwaq_env_cfg:GO2RobotDWAQEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.go_rsl_rl_dwaq_cfg:Go2FlatDWAQRunnerCfg",
+    },
+)

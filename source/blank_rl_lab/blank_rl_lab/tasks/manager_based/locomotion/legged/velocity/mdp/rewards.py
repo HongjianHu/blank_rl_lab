@@ -73,6 +73,9 @@ def energy_new_actual(env, asset_cfg=SceneEntityCfg("robot"), sigma_lin=1000.0, 
 def feet_slip(env, sensor_cfg, asset_cfg=SceneEntityCfg("robot")):
     contact_sensor = env.scene.sensors[sensor_cfg.name]
     asset = env.scene[asset_cfg.name]
+    # [num_envs, history_length, num_bodies, 3] → [num_envs, history_length, K, 3]
+    # [num_envs, history_length, K, 3] → [num_envs, history_length, K]
+    # [num_envs, history_length, K] → [num_envs, K]
     contacts = contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
     feet_vel_xy = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2]
     return torch.sum(contacts * torch.sum(torch.square(feet_vel_xy), dim=-1), dim=1)
