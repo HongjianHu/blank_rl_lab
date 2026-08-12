@@ -241,8 +241,6 @@ class PPOAMP(PPO):
                         kl_mean /= self.gpu_world_size
 
                     # Update the learning rate only on the main process
-                    # TODO: Is this needed? If KL-divergence is the "same" across all GPUs,
-                    #       then the learning rate should be the same across all GPUs.
                     if self.gpu_global_rank == 0:
                         if kl_mean > self.desired_kl * 2.0:
                             self.learning_rate = max(1e-5, self.learning_rate / 1.5)

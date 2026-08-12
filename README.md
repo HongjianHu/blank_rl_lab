@@ -42,6 +42,7 @@ Blank RL Lab studies robust velocity tracking for the **Unitree Go2 quadruped** 
 | Go2 | `Go2-CTS-v0` | Rough | Concurrent Teacher-Student latent imitation |
 | Go2 | `Go2-CTSMoe-v0` | Rough | CTS with a Mixture-of-Experts encoder and load balancing |
 | Go2 | `Go2-DWAQ-v0` | Flat | PPO with a beta-VAE for velocity estimation and context inference |
+| Go2 | `Go2-ExtremeParkour-Teacher-v0` | Procedural Parkour | Privileged teacher PPO with waypoint navigation and terrain curricula |
 | Go2W | `Go2W-flat-velocity-v0` | Flat | PPO baseline with a hybrid wheel-legged action space |
 | Go2W | `Go2W-rough-velocity-v0` | Rough | Rough-terrain velocity tracking for the wheel-legged platform |
 
@@ -56,6 +57,7 @@ Blank RL Lab studies robust velocity tracking for the **Unitree Go2 quadruped** 
 | CTS | Proprioceptive history; privileged input for the teacher | Train teacher and student concurrently in the same vectorized rollout |
 | CTS-MoE | Proprioceptive history and MoE latent | Learn expert specialization, gating, and balanced expert utilization |
 | DWAQ | Proprioceptive observation history | Jointly learn velocity estimation, observation reconstruction, and a context latent with a beta-VAE |
+| Extreme Parkour Teacher | Proprioception, terrain scan, and privileged state | Train waypoint-conditioned locomotion with estimator supervision and privileged-history regularization |
 
 ## Quick Start
 
@@ -115,6 +117,14 @@ Train DWAQ:
 ```bash
 python scripts/rsl_rl/train.py \
     --task Go2-DWAQ-v0 \
+    --headless
+```
+
+Train the Extreme Parkour teacher:
+
+```bash
+python scripts/rsl_rl/train.py \
+    --task Go2-ExtremeParkour-Teacher-v0 \
     --headless
 ```
 
@@ -271,8 +281,8 @@ For a quick technical walkthrough, read the project in the following order:
 - [x] AMP motion-prior training
 - [x] TSDepth, CTS, CTS-MoE, and DWAQ integration
 - [x] Go2W flat- and rough-terrain tasks
+- [x] Extreme Parkour teacher environment, terrain metadata, and training integration
 - [x] TorchScript / ONNX export and MuJoCo replay scaffold
-- [ ] Add, register, and systematically train Extreme Parkour environments
 - [ ] Add a unified evaluation protocol, training curves, and multi-seed comparisons
 - [ ] Benchmark velocity tracking, stability, and terrain traversal across algorithms
 - [ ] Extend validation toward sim-to-real interfaces and hardware safety constraints

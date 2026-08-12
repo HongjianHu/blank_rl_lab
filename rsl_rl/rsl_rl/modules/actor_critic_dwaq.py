@@ -93,12 +93,12 @@ class ActorCriticDWAQ(ActorCritic):
     def act(self, obs:TensorDict, **kwargs: dict[str, Any]):
         policy_obs = self.get_policy_obs(obs)
         policy_obs = self.actor_obs_normalizer(policy_obs)
-        code = self.context_vae.encode(self.get_obs_history(obs))
+        code = self.context_vae.encode(self.get_obs_history(obs), deterministic=False)
         self._update_distribution(torch.cat([code, policy_obs], dim=-1))
         return self.distribution.sample() # type:ignore
     
     def act_inference(self, obs: TensorDict) -> torch.Tensor:
         policy_obs = self.get_actor_obs(obs)
         policy_obs = self.actor_obs_normalizer(policy_obs)
-        code = self.context_vae.encode(self.get_obs_history(obs))
-        return self.actor(torch.cat([code, policy_obs], dim=-1))    
+        code = self.context_vae.encode(self.get_obs_history(obs), deterministic=True)
+        return self.actor(torch.cat([code, policy_obs], dim=-1))

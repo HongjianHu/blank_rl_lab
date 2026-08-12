@@ -175,7 +175,8 @@ class PPO_TSDepth:
                 mu_batch = self.actor_critic.action_mean
                 entropy_batch = self.actor_critic.entropy
                 action_reconstruction_loss = nn.functional.mse_loss(mu_batch, teacher_actions_batch)
-                loss = action_reconstruction_loss + self.entropy_coef * entropy_batch.mean()
+                # Match PPO's entropy regularization: minimizing -H encourages exploration.
+                loss = action_reconstruction_loss - self.entropy_coef * entropy_batch.mean()
                 self.student_optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.student_params, self.max_grad_norm)

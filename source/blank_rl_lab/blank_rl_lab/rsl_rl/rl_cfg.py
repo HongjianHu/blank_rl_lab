@@ -304,3 +304,42 @@ class RslRlDwaqAlgorithmCfg(RslRlPpoAlgorithmCfg):
 
     vae_learning_rate: float = 1e-3
     """Learning rate for the VAE optimizer (separate from the RL optimizer)."""
+
+@configclass
+class ExtremeParkourTeacherPolicyCfg(RslRlPpoActorCriticCfg):
+    """Extreme Parkour 教师策略的网络和观测契约。"""
+
+    class_name: str = "ExtremeParkourActorCritic"
+    proprio_dim: int = 53
+    terrain_scan_dim: int = 132
+    priv_explicit_dim: int = 9
+    priv_latent_dim: int = 29
+
+    history_length: int = 10
+    proprio_history_dim: int = 530
+
+    # Encoder
+    scan_encoder_dims: list[int] = [128, 64, 32]
+    priv_encoder_dims: list[int] = [64, 20]
+    history_latent_dim: int = 20
+
+    actor_input_dim: int = 114
+    critic_input_dim: int = 753
+
+    scan_encoder_output_tanh: bool = True
+
+@configclass
+class ExtremeParkourPPOAlgorithmCfg(RslRlPpoAlgorithmCfg):
+    class_name: str = "ExtremeParkourPPO"
+
+    # 53 -> 128 -> 64 -> 9
+    estimator_input_dim: int = 53
+    estimator_hidden_dims: list[int] = [128, 64]
+    estimator_output_dim: int = 9
+    estimator_learning_rate: float = 1.0e-4
+
+    train_with_estimated_states: bool = True
+
+    history_update_interval: int = 20
+
+    priv_reg_coef_schedule: list[float] = [0.0, 0.1, 2000.0, 3000.0,]

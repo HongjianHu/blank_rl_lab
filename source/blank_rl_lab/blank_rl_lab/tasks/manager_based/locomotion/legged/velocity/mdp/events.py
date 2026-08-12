@@ -46,13 +46,13 @@ def ref_state_init_root(
     num_envs = env_ids.shape[0]
     dt = env.cfg.sim.dt * env.cfg.decimation
 
-    if motion_dataset is None:
+    if motion_dataset is None: # type:ignore
         # select one dataset randomly by weights
         term_weights = env.motion_data_manager.get_term_weights()
         motion_dataset = random.choices(list(term_weights.keys()), weights=list(term_weights.values()))[0]
     else:
-        if motion_dataset not in env.motion_data_manager.active_terms():
-            raise ValueError(f"Motion dataset '{motion_dataset}' not found in the active terms.")
+        if motion_dataset not in env.motion_data_manager.active_terms(): # type:ignore
+            raise ValueError(f"Motion dataset '{motion_dataset}' not found in the active terms.")  # type:ignore
     motion_loader = env.motion_data_manager.get_term(motion_dataset)
     motion_ids = motion_loader.sample_motions(num_envs)
     motion_times = motion_loader.sample_times(motion_ids, truncate_time=dt)
@@ -71,11 +71,11 @@ def ref_state_init_root(
     
     asset.write_root_pose_to_sim(
         torch.cat([ref_root_pos_w, ref_root_quat], dim=-1),
-        env_ids=env_ids,
+        env_ids=env_ids, # type:ignore
     )
     asset.write_root_velocity_to_sim(
         torch.cat([ref_root_vel_w, ref_root_ang_vel_w], dim=-1),
-        env_ids=env_ids,
+        env_ids=env_ids, # type:ignore
     )
     
 
@@ -117,14 +117,14 @@ def ref_state_init_dof(
     joint_vel = motion_state_dict["dof_vel"]
     
     # clamp joint pos to limits
-    joint_pos_limits = asset.data.soft_joint_pos_limits[env_ids]
+    joint_pos_limits = asset.data.soft_joint_pos_limits[env_ids] # type:ignore
     joint_pos = joint_pos.clamp_(joint_pos_limits[..., 0], joint_pos_limits[..., 1])
     # clamp joint vel to limits
-    joint_vel_limits = asset.data.soft_joint_vel_limits[env_ids]
+    joint_vel_limits = asset.data.soft_joint_vel_limits[env_ids] # type:ignore
     joint_vel = joint_vel.clamp_(-joint_vel_limits, joint_vel_limits)
 
     # set into the physics simulation
-    asset.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+    asset.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids) # type:ignore
 
 def apply_force(
     env: ManagerBasedAmpEnv,
@@ -143,7 +143,7 @@ def apply_force(
     torques = torch.zeros(size, device=asset.device)
     force_command = env.command_manager.get_term("force_command")
     forces[:, 0, 2] = force_command.command[env_ids, 0]
-    asset.set_external_force_and_torque(forces, torques, env_ids=env_ids, body_ids=asset_cfg.body_ids, is_global=True)
+    asset.set_external_force_and_torque(forces, torques, env_ids=env_ids, body_ids=asset_cfg.body_ids, is_global=True) # type:ignore
 
 def push_by_setting_velocity_record_xy(env: ManagerBasedEnv, env_ids: torch.Tensor | None, velocity_range: dict[str, tuple[float, float]], asset_cfg: SceneEntityCfg=SceneEntityCfg('robot')) -> None:
     asset: RigidObject | Articulation = env.scene[asset_cfg.name]
@@ -153,7 +153,7 @@ def push_by_setting_velocity_record_xy(env: ManagerBasedEnv, env_ids: torch.Tens
         env_ids = env_ids.to(device=asset.device, dtype=torch.long)
     n = env.scene.num_envs
     if not hasattr(env, '_ts_depth_push_xy'):
-        env._ts_depth_push_xy = torch.zeros(n, 2, device=asset.device)
+        env._ts_depth_push_xy = torch.zeros(n, 2, device=asset.device) # type:ignore
     vel_w = asset.data.root_vel_w[env_ids] # 在世界坐标系下的运动状态 root_vel_w, 包含了前3维的线速度和后3维的角速度
     range_list = [velocity_range.get(key, (0.0, 0.0)) for key in ['x', 'y', 'z', 'roll', 'pitch', 'yaw']]
     ranges = torch.tensor(range_list, device=asset.device)
@@ -161,9 +161,9 @@ def push_by_setting_velocity_record_xy(env: ManagerBasedEnv, env_ids: torch.Tens
     delta = math_utils.sample_uniform(ranges[:, 0], ranges[:, 1], vel_w.shape, device=asset.device)
     vel_w = vel_w + delta
     # 将叠加了扰动后的新速度重新强行写入PhysX 物理引擎。物理引擎在下一帧迭代时，就会以这个突然变大或变小的速度开始模拟
-    asset.write_root_velocity_to_sim(vel_w, env_ids=env_ids)
-    env._ts_depth_push_xy[env_ids, 0] = delta[:, 0]
-    env._ts_depth_push_xy[env_ids, 1] = delta[:, 1]
+    asset.write_root_velocity_to_sim(vel_w, env_ids=env_ids) # type:ignore
+    env._ts_depth_push_xy[env_ids, 0] = delta[:, 0] # type:ignore
+    env._ts_depth_push_xy[env_ids, 1] = delta[:, 1] # type:ignore
 
 
 def go2_push_by_setting_root_velocity(
@@ -197,3 +197,82 @@ def go2_push_by_setting_root_velocity(
             device=asset.device,
         )
     asset.write_root_velocity_to_sim(vel_w, env_ids=env_ids) # type:ignore
+
+
+class ExtremeParkourRandomizeRigidBodyMaterial(ManagerTermBase):
+    def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv) -> None:
+        super().__init__(cfg, env)
+
+        asset_cfg: SceneEntityCfg = cfg.params["asset_cfg"]
+
+        asset = env.scene[asset_cfg.name]
+
+
+        if not isinstance(asset, (Articulation, RigidObject),):
+            raise TypeError(
+                "ExtremeParkourRandomizeRigidBodyMaterial requires an Articulation or RigidObject."
+            )
+
+        # SceneEntityCfg("robot") without body_names means:
+        # target every rigid body and every collider shape.
+        if asset_cfg.body_ids != slice(None):
+            raise ValueError(
+                "Extreme Parkour friction randomization must "
+                "target the complete robot. Use "
+                'SceneEntityCfg("robot") without body_names.'
+            )
+
+        friction_range = cfg.params["friction_range"]
+
+        num_buckets = int(cfg.params["num_buckets"]) # type:ignore
+
+        friction_min = float(friction_range[0]) # type:ignore
+
+        friction_max = float(friction_range[1]) # type:ignore
+
+        self._asset = asset
+
+        self._num_buckets = num_buckets
+
+        # Sample the finite material set once on CPU.
+        # PhysX material-property assignment uses CPU tensors.
+        self._friction_buckets = torch.empty(num_buckets, dtype=torch.float, device="cpu").uniform_(friction_min, friction_max)
+
+    def __call__(
+        self,
+        env: ManagerBasedEnv,
+        env_ids: torch.Tensor | None,
+        asset_cfg: SceneEntityCfg,
+        friction_range: tuple[float, float],
+        num_buckets: int,
+        restitution: float = 0.0,
+    ) -> None:
+        del env, asset_cfg, friction_range
+
+        if env_ids is None:
+            env_ids_cpu = torch.arange(self._asset.num_instances, dtype=torch.long, device="cpu")
+        else:
+            env_ids_cpu = env_ids.to(dtype=torch.long, device="cpu")
+
+        # Every environment chooses exactly one material bucket.
+        bucket_ids = torch.randint(low=0, high=self._num_buckets, size=(len(env_ids_cpu),), device="cpu")
+
+        friction = self._friction_buckets[bucket_ids]
+
+        # Shape:
+        # [num_envs, max_num_collision_shapes, 3]
+        #
+        # Last dimension:
+        # 0 = static friction
+        # 1 = dynamic friction
+        # 2 = restitution
+
+        material_properties = self._asset.root_physx_view.get_material_properties()
+
+        material_properties[env_ids_cpu, :,  0] = friction.unsqueeze(-1)
+
+        material_properties[env_ids_cpu, :, 1] = friction.unsqueeze(-1)
+
+        material_properties[env_ids_cpu, :, 2] = restitution
+
+        self._asset.root_physx_view.set_material_properties(material_properties, env_ids_cpu)

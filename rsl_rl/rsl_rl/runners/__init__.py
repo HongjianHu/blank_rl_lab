@@ -11,4 +11,6 @@ from .amp_runner import AMPRunner
 from .tsdepth_runner import TsDepthRunner
 from .cts_runner import OnPolicyRunnerCTS
 from .dwaq_runner import DWAQRunner
-__all__ = ["DistillationRunner", "OnPolicyRunner", "AMPRunner", "TsDepthRunner", "OnPolicyRunnerCTS", "DWAQRunner"]
+from .extreme_parkour_runner import ExtremeParkourRunner
+
+__all__ = ["DistillationRunner", "OnPolicyRunner", "AMPRunner", "TsDepthRunner", "OnPolicyRunnerCTS", "DWAQRunner", "ExtremeParkourRunner"]

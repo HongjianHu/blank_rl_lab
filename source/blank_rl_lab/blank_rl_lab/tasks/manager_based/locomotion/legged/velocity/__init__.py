@@ -90,3 +90,17 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.go_rsl_rl_dwaq_cfg:Go2FlatDWAQRunnerCfg",
     },
 )
+
+gym.register(
+    id="Go2-ExtremeParkour-Teacher-v0",
+    entry_point=f"{__name__}.go2_extreme_parkour_env_cfg:ExtremeParkourManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.go2_extreme_parkour_env_cfg:Go2ExtremeParkourTeacherEnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+        f"{agents.__name__}.go2_extreme_parkour_rsl_rl_cfg:Go2ExtremeParkourTeacherRunnerCfg"
+        ),
+    },
+)

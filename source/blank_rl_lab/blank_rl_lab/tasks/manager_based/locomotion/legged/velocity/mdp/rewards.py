@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import torch
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
+from isaaclab.envs import ManagerBasedEnv
 from isaaclab.managers import SceneEntityCfg, ActionManager
+from isaaclab.managers.manager_base import ManagerTermBase
+from isaaclab.managers.manager_term_cfg import ManagerTermBaseCfg, RewardTermCfg
 from isaaclab.assets import Articulation
 from isaaclab.sensors import RayCaster, ContactSensor
 from isaaclab.utils.math import quat_apply_inverse, wrap_to_pi, yaw_quat
@@ -429,3 +432,317 @@ def go2_track_ang_vel_z_exp(
 
     error_sq = torch.square(command[:, 2] - asset.data.root_ang_vel_b[:, 2])
     return torch.exp(-error_sq / sigma)
+
+# ===================== Extreme Parkour =====================
+def extreme_parkour_tracking_goal_vel(env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),) -> torch.Tensor:
+    """Reward world-frame xy velocity projected toward the current waypoint."""
+
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    command_term = env.command_manager.get_term(command_name)
+
+    target_pos_rel_w = (command_term.current_waypoint_w[:, :2] - asset.data.root_pos_w[:, :2]) # type:ignore
+
+    target_norm = torch.linalg.vector_norm(target_pos_rel_w, dim=-1, keepdim=True,)
+
+    target_direction_w = target_pos_rel_w / (target_norm + 1.0e-5)
+
+    current_velocity_w = asset.data.root_lin_vel_w[:, :2]
+
+    projected_velocity = torch.sum(target_direction_w * current_velocity_w, dim=-1)
+
+    target_speed = command_term.forward_speed #type:ignore
+
+    if target_speed.shape != (env.num_envs,):
+       raise RuntimeError(
+           "Extreme Parkour forward_speed must have shape "
+           f"({env.num_envs},), got {tuple(target_speed.shape)}."
+       )
+
+    reward = torch.minimum(projected_velocity, target_speed,) / (target_speed + 1.0e-5)
+
+    return reward
+
+def extreme_parkour_tracking_yaw(env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    command_term = env.command_manager.get_term(command_name)
+
+    target_pos_rel_w = command_term.current_waypoint_w[:, :2] - asset.data.root_pos_w[:, :2] #type:ignore
+
+    target_norm = torch.linalg.vector_norm(target_pos_rel_w, dim=-1, keepdim=True)
+
+    target_direction_w = target_pos_rel_w / (target_norm + 1.0e-5)
+
+    target_yaw_w = torch.atan2(target_direction_w[:, 1], target_direction_w[:, 0])
+
+    robot_yaw_w = asset.data.heading_w
+
+    yaw_error = target_yaw_w - robot_yaw_w
+
+    return torch.exp(-torch.abs(yaw_error))
+
+def extreme_parkour_lin_vel_z(env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    command_term = env.command_manager.get_term(command_name)
+
+    vertical_velocity_penalty = torch.square(asset.data.root_lin_vel_b[:, 2])
+
+    is_flat =  command_term.terrain_class == command_term.cfg.parkour_flat_terrain_class # type: ignore
+
+    penalty_scale = torch.where(is_flat, torch.ones_like(vertical_velocity_penalty), torch.full_like(vertical_velocity_penalty, 0.5),)
+
+    return vertical_velocity_penalty * penalty_scale
+
+def extreme_parkour_ang_vel_xy(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    return torch.sum(torch.square(asset.data.root_ang_vel_b[:, :2]), dim=-1)
+
+def extreme_parkour_orientation(env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),) -> torch.Tensor:
+    """Penalize base tilt only on the local flat terrain class."""
+
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    command_term = env.command_manager.get_term(command_name)
+
+    orientation_penalty = torch.sum(torch.square(asset.data.projected_gravity_b[:, :2]), dim=-1)
+
+    is_flat = command_term.terrain_class == command_term.cfg.parkour_flat_terrain_class # type:ignore
+
+    return orientation_penalty * is_flat.float()
+
+# 为什么需要 ManagerTermBase
+# 普通函数只根据当前状态计算：f(state_t),但dof_acc 和 delta_torques 需要 f(state_t, state_t-1)
+# ManagerTermBase 让奖励项拥有自己的持久状态，并允许 RewardManager 在 episode reset 时调用：term.reset(env_ids)
+# 这可以保证不同 episode 之间不会继承上一回合的：
+class ExtremeParkourJointAcceleration(ManagerTermBase):
+    def __init__(self, cfg: ManagerTermBaseCfg, env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+
+        asset_cfg: SceneEntityCfg = cfg.params["asset_cfg"]
+        asset: Articulation = env.scene[asset_cfg.name]
+
+        if isinstance(asset_cfg.joint_ids, slice):
+           raise ValueError("ExtremeParkourJointAcceleration requires 12 explicit joint IDs.")
+
+        if len(asset_cfg.joint_ids) != 12:
+            raise ValueError(
+                "ExtremeParkourJointAcceleration expected "
+                f"12 joints, got {len(asset_cfg.joint_ids)}."
+            )
+
+        self._asset = asset
+        self._joint_ids = list(asset_cfg.joint_ids)
+
+        self._last_joint_vel = torch.zeros(env.num_envs, 12, device=self.device)
+
+    def reset(self, env_ids=None) -> None:
+        # env_ids 指的是需要重置的并行环境编号
+        # IsaacLab 的 RewardManager.reset() 内部会把 None 转换成：slice(None)
+        if env_ids is None: # 手动/全局 reset：重置全部环境
+            self._last_joint_vel.zero_()
+        else:
+            self._last_joint_vel[env_ids] = 0.0
+
+    def __call__(self, env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+        del asset_cfg
+
+        current_joint_vel = self._asset.data.joint_vel[:, self._joint_ids]
+
+        joint_acceleration = (self._last_joint_vel - current_joint_vel) / env.step_dt
+
+        penalty = torch.sum(torch.square(joint_acceleration), dim=-1)
+
+        self._last_joint_vel.copy_(current_joint_vel)
+
+        return penalty
+
+def extreme_parkour_action_rate(env: ManagerBasedRLEnv,) -> torch.Tensor:
+    """Official L2 norm of the policy-step action difference."""
+
+    current_action = env.action_manager.action
+    previous_action = env.action_manager.prev_action
+
+    if current_action.shape[-1] != 12:
+        raise RuntimeError(
+            f"Extreme Parkour expects a 12-D action, got shape {tuple(current_action.shape)}."
+        )
+
+    return torch.linalg.vector_norm(current_action - previous_action, dim=-1,)
+
+class ExtremeParkourTorqueChange(ManagerTermBase):
+    """Official policy-step torque-change penalty."""
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRLEnv,) -> None:
+        super().__init__(cfg, env)
+
+        asset_cfg: SceneEntityCfg = cfg.params["asset_cfg"]
+        asset: Articulation = env.scene[asset_cfg.name]
+
+        if isinstance(asset_cfg.joint_ids, slice):
+            raise ValueError("ExtremeParkourTorqueChange requires 12 explicit joint IDs.")
+
+        if len(asset_cfg.joint_ids) != 12:
+            raise ValueError(
+                "ExtremeParkourTorqueChange expected "
+                f"12 joints, got {len(asset_cfg.joint_ids)}."
+            )
+
+        self._asset = asset
+        self._joint_ids = list(asset_cfg.joint_ids)
+
+        self._last_torque = torch.zeros(env.num_envs, 12, device=env.device,)
+
+    def reset(self, env_ids=None) -> None:
+        if env_ids is None:
+            self._last_torque.zero_()
+        else:
+            self._last_torque[env_ids] = 0.0
+
+    def __call__(self, env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg,) -> torch.Tensor:
+        del env, asset_cfg
+
+        current_torque = self._asset.data.applied_torque[:, self._joint_ids,]
+
+        penalty = torch.sum(torch.square(current_torque - self._last_torque), dim=-1,)
+
+        self._last_torque.copy_(current_torque)
+
+        return penalty
+
+def extreme_parkour_collision(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, threshold: float = 0.1,) -> torch.Tensor:
+    """Count penalized bodies whose current contact force exceeds threshold."""
+
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]  # type: ignore
+
+    current_forces_w = (contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, :]) # type:ignore
+
+    force_magnitude = torch.linalg.vector_norm(current_forces_w, dim=-1,)
+
+    collision = force_magnitude > threshold
+
+    return torch.sum(collision.float(), dim=-1,)
+
+def extreme_parkour_joint_position_error(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Squared joint-position deviation from the configured default pose."""
+
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    joint_error = (asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids])
+
+    return torch.sum(torch.square(joint_error), dim=-1)
+
+def extreme_parkour_feet_stumble(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, ratio: float = 4.0,) -> torch.Tensor:
+    """Detect feet hitting near-vertical obstacle surfaces."""
+
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]  # type: ignore
+
+    current_forces_w = (contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, :]) # type: ignore
+
+    horizontal_force = torch.linalg.vector_norm(current_forces_w[..., :2], dim=-1,)
+
+    vertical_force = torch.abs(current_forces_w[..., 2])
+
+    stumbled = torch.any(horizontal_force > ratio * vertical_force, dim=-1)
+
+    return stumbled.float()
+
+# 每只脚沿前进方向的射线位置为：x = -0.05, 0.00, +0.05 m
+# 如果足端距离前后边缘不超过约 5 cm，相邻射线会出现：高度跳变超过 0.075 m,或者一条射线有命中，另一条没有命中。
+# 0.075 m 来自mesh转换阈值：slope_threshold × horizontal_scale
+
+class ExtremeParkourFeetEdge(ManagerTermBase):
+    def __init__(self, cfg: ManagerTermBaseCfg, env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+
+        sensor_cfg: SceneEntityCfg = cfg.params["sensor_cfg"]
+
+        scanner_names: list[str] = cfg.params["scanner_names"] # type:ignore
+
+        if isinstance(sensor_cfg.body_ids, slice):
+           raise ValueError("ExtremeParkourFeetEdge requires four explicit foot body IDs.")
+
+        if len(sensor_cfg.body_ids) != 4:
+            raise ValueError(
+                "ExtremeParkourFeetEdge expected four feet, "
+                f"got {len(sensor_cfg.body_ids)}."
+            )
+
+        if len(scanner_names) != 4:
+            raise ValueError(
+                "ExtremeParkourFeetEdge expected four "
+                f"foot scanners, got {len(scanner_names)}."
+            )
+
+        if len(set(scanner_names)) != 4:
+            raise ValueError(
+                "ExtremeParkourFeetEdge scanner names must be unique."
+            )
+
+        self._foot_body_ids = list(sensor_cfg.body_ids)
+
+        self._scanners: list[RayCaster] = []
+
+        for scanner_name in scanner_names:
+            scanner: RayCaster = env.scene.sensors[scanner_name]  # type: ignore
+
+            self._scanners.append(scanner)
+
+        self._last_contact = torch.zeros(env.num_envs, 4, dtype=torch.bool, device=env.device,)
+
+    def reset(self, env_ids=None) -> None:
+        if env_ids is None:
+            self._last_contact.zero_()
+        else:
+            self._last_contact[env_ids] = False
+
+    def __call__(self, env: ManagerBasedRLEnv,
+        sensor_cfg: SceneEntityCfg,
+        scanner_names: list[str],
+        contact_threshold: float = 2.0,
+        edge_height_threshold: float = 0.075,
+        minimum_terrain_level: int = 4,
+    ) -> torch.Tensor:
+       del scanner_names
+
+       contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name] # type: ignore
+
+       current_contact = torch.linalg.vector_norm(contact_sensor.data.net_forces_w[:, self._foot_body_ids,:], dim=-1) > contact_threshold # type:ignore
+
+       filtered_contact = torch.logical_or(current_contact, self._last_contact)
+
+       self._last_contact.copy_(current_contact)
+
+       feet_at_edge = torch.zeros(env.num_envs, 4, dtype=torch.bool, device=env.device)
+
+       for foot_index, scanner in enumerate(self._scanners):
+           hit_height = scanner.data.ray_hits_w[..., 2].reshape(env.num_envs, 3, 3)
+
+           valid_hit = torch.isfinite(hit_height)
+
+           valid_x_pair = valid_hit[:, 1:, :] & valid_hit[:, :-1, :]
+
+           height_jump = torch.abs(hit_height[:, 1:, :]- hit_height[:, :-1, :])
+
+           edge_from_height = torch.any(valid_x_pair & ( height_jump > edge_height_threshold), dim=(1, 2),)
+
+           # 场景：脚后跟踩在实地，脚前掌悬空在悬崖外
+           validity_transition = valid_hit[:, 1:, :] ^ valid_hit[:, :-1, :]
+
+           edge_from_missing_hit = torch.any(validity_transition, dim=(1, 2))
+
+           # 假设机器人脚掌完全悬空（正在空中），此时脚后跟处的射线可能扫到远处的墙壁（有效），
+           # 脚前掌射向深渊（无效）。如果只看判据二，会误以为“踩在边缘”。但此时脚根本没落地（中心点无效）， 不应该触发“踩边缘”惩罚
+           center_hit_is_valid = valid_hit[:, 1, 1]
+
+           feet_at_edge[:, foot_index] = center_hit_is_valid & (edge_from_height | edge_from_missing_hit)
+
+       terrain_levels = env.scene.terrain.terrain_levels # type:ignore
+
+       # 在平地上（等级 0），没有台阶边缘，检测没意义。只有当地形复杂到一定级别（>=4）时，机器人才需要刻意避开边缘
+       difficult_enough = terrain_levels >= minimum_terrain_level
+
+       contacting_edge = filtered_contact & feet_at_edge
+
+       return difficult_enough.float() * torch.sum(contacting_edge.float(), dim=-1)

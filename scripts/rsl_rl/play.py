@@ -58,7 +58,15 @@ import os
 import time
 import torch
 
-from rsl_rl.runners import AMPRunner, DistillationRunner, OnPolicyRunner, TsDepthRunner, OnPolicyRunnerCTS, DWAQRunner
+from rsl_rl.runners import (
+    AMPRunner,
+    DistillationRunner,
+    DWAQRunner,
+    ExtremeParkourRunner,
+    OnPolicyRunner,
+    OnPolicyRunnerCTS,
+    TsDepthRunner,
+)
 
 from isaaclab.envs import (
     DirectMARLEnv,
@@ -158,6 +166,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         runner = OnPolicyRunnerCTS(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device) #type:ignore
     elif agent_cfg.class_name == "DWAQRunner": #type:ignore
         runner = DWAQRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device) #type:ignore
+    elif agent_cfg.class_name == "ExtremeParkourRunner": #type:ignore
+        runner = ExtremeParkourRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device) #type:ignore
     else:
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}") # type:ignore
     runner.load(resume_path, map_location=agent_cfg.device)
@@ -196,6 +206,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             export_cts_policy_as_onnx(policy_nn, path=export_model_dir, filename="policy.onnx")
         except (AttributeError, TypeError, ValueError, RuntimeError, NotImplementedError) as e:
             print(f"[WARNING] export_policy_as_onnx skipped (incompatible policy architecture): {e}")
+    elif agent_cfg.class_name == "ExtremeParkourRunner": # type: ignore
+        print(
+            "[INFO] Extreme Parkour JIT/ONNX export is "
+            "deferred until the dedicated export stage."
+        )
     else:
         try:
             export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")

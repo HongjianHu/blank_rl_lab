@@ -82,7 +82,7 @@ from datetime import datetime
 
 import gymnasium as gym
 import torch
-from rsl_rl.runners import DistillationRunner, OnPolicyRunner, AMPRunner, TsDepthRunner, OnPolicyRunnerCTS, DWAQRunner
+from rsl_rl.runners import DistillationRunner, OnPolicyRunner, AMPRunner, TsDepthRunner, OnPolicyRunnerCTS, DWAQRunner, ExtremeParkourRunner
 
 from isaaclab.envs import (
     DirectMARLEnv,
@@ -214,6 +214,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         runner = OnPolicyRunnerCTS(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device) #type:ignore
     elif agent_cfg.class_name == "DWAQRunner": #type:ignore
         runner = DWAQRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device) #type:ignore
+    elif agent_cfg.class_name == "ExtremeParkourRunner": #type:ignore
+        runner = ExtremeParkourRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device) #type:ignore
     else:
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}") #type:ignore
     

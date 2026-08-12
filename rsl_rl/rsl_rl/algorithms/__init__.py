@@ -10,6 +10,7 @@ from .ppo import PPO
 from .ppo_amp import PPOAMP
 from .cts import CTS
 from .moe_ng_cts import MoENGCTS
+from .ppo_extreme_parkour import ExtremeParkourPPO
 
 __all__ = [
     "PPO",
@@ -17,4 +18,5 @@ __all__ = [
     "PPOAMP",
     "CTS",
     "MoENGCTS",
+    "ExtremeParkourPPO",
     ]

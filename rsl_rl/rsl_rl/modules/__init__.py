@@ -20,6 +20,11 @@ from .actor_critic_moe_ng_cts import (
     StudentMoEEncoder,
 )
 from .actor_critic_dwaq import ActorCriticDWAQ
+from .actor_critic_extreme_parkour import (
+    ExtremeParkourActorCritic,
+    ExtremeParkourEstimator,
+    ExtremeParkourStateHistoryEncoder,
+)
 
 __all__ = [
     "ActorCritic",
@@ -37,4 +42,7 @@ __all__ = [
     "StudentMoEEncoder",
     "ActorCriticMoENGCTS",
     "ActorCriticDWAQ",
+    "ExtremeParkourActorCritic",
+    "ExtremeParkourEstimator",
+    "ExtremeParkourStateHistoryEncoder",
 ]

@@ -110,7 +110,7 @@ class ContextVAE(nn.Module):
     def reparameterise(mean: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         logvar = torch.clamp(logvar, min=-10.0, max=10.0)
         std = torch.exp(0.5 * logvar)
-        return mean + std * torch.rand_like(std)
+        return mean + std * torch.randn_like(std)
 
     def forward(self, obs_history: torch.Tensor) -> ContextVAEOutput:
         h = self.encoder(obs_history)
@@ -137,13 +137,20 @@ class ContextVAE(nn.Module):
             logvar_latent=latent_logvar,
         )
     
-    def encode(self, obs_history: torch.Tensor) -> torch.Tensor:
+    def encode(self, obs_history: torch.Tensor, deterministic: bool = False) -> torch.Tensor:
         """Encode only — returns the full latent code without decoding.
 
-        Useful at inference time when the reconstruction is not needed.
+        Training uses reparameterized Gaussian samples. Deterministic inference
+        uses the posterior means to avoid injecting sampling noise into the
+        control actions.
         """
         h = self.encoder(obs_history)
-        c_vel = self.reparameterise(self.mean_vel(h), self.logvar_vel(h))
-        c_lat = self.reparameterise(self.mean_latent(h), self.logvar_latent(h))
-        return torch.cat((c_vel, c_lat), dim=-1)
+        vel_mean = self.mean_vel(h)
+        latent_mean = self.mean_latent(h)
 
+        if deterministic:
+            return torch.cat((vel_mean, latent_mean), dim=-1)
+
+        c_vel = self.reparameterise(vel_mean, self.logvar_vel(h))
+        c_lat = self.reparameterise(latent_mean, self.logvar_latent(h))
+        return torch.cat((c_vel, c_lat), dim=-1)

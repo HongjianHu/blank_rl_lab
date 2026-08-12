@@ -178,3 +178,38 @@ def terrain_levels_by_go2_command(
     terrain.update_env_origins(env_ids, move_up, move_down) # type: ignore
 
     return torch.mean(terrain.terrain_levels.float())
+
+def extreme_parkour_terrain_levels(env: ManagerBasedRLEnv, env_ids: torch.Tensor, command_name: str = "waypoint", asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),) -> torch.Tensor:
+    """Update terrain difficulty using the official parkour distance rule."""
+
+    terrain: TerrainImporter = env.scene.terrain # type:ignore
+    asset: Articulation= env.scene[asset_cfg.name]
+    command_term = env.command_manager.get_term(command_name) # type:ignore
+
+    # Keep the initial environment assignment unchanged.
+    # curriculum term 会在 reset 流程中被调用,如果没有这个判断，初始化 reset 可能被错误地当成一个已经结束的 episode，
+    # 然后根据机器人尚未运行的状态计算 move_up 和 move_down
+    if env.common_step_counter == 0:
+        return torch.mean(terrain.terrain_levels.float())
+
+    distance_from_origin = torch.linalg.vector_norm(asset.data.root_pos_w[env_ids, :2] - env.scene.env_origins[env_ids, :2], dim = 1)
+    expected_distance = command_term.forward_speed[env_ids] * env.max_episode_length_s # type:ignore
+
+    move_up = distance_from_origin > 0.8 * expected_distance
+    move_down = (distance_from_origin < 0.4 * expected_distance) & ~move_up
+
+    '''
+    curriculum
+    调用 update_env_origins()
+            ↓
+    环境 5 的 env_origin 改成新地形格原点
+            ↓
+    scene reset
+    机器人根状态基于新 env_origin 重置
+            ↓
+    command manager reset
+    重新读取新 level/type 的 waypoint
+    '''
+    terrain.update_env_origins(env_ids, move_up, move_down,)
+
+    return torch.mean(terrain.terrain_levels.float())

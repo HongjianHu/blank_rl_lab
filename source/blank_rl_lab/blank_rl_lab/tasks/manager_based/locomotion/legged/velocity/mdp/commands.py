@@ -4,6 +4,8 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import torch
+import isaaclab.sim as sim_utils
+import isaaclab.utils.math as math_utils
 from dataclasses import MISSING
 import itertools
 
@@ -11,7 +13,6 @@ from isaaclab.assets import Articulation
 from isaaclab.managers import CommandTerm, CommandTermCfg
 from isaaclab.utils import configclass
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
-from isaaclab.markers.config import BLUE_ARROW_X_MARKER_CFG, FRAME_MARKER_CFG, GREEN_ARROW_X_MARKER_CFG
 from isaaclab.envs.mdp import UniformVelocityCommandCfg
 from isaaclab.envs.mdp.commands.velocity_command import UniformVelocityCommand
 
@@ -74,8 +75,8 @@ each env step
 
 self.time_left:每个 env 距离下一次重采样 command 还剩多少秒。注意是“秒”，不是 step 数。
 self.command_counter:当前 episode 内这个 command 被重采样了几次。
-self.vel_command_b:IsaacLab UniformVelocityCommand 里的核心 command，shape 是 (num_envs, 3)，分别是 base frame 下的 lin_vel_x, lin_vel_y, ang_vel_z。
-self.robot:由 cfg.asset_name 找到的机器人 articulation，来自 env.scene[cfg.asset_name]。
+self.vel_command_b:IsaacLab UniformVelocityCommand 里的核心 command.shape 是 (num_envs, 3)，分别是 base frame 下的 lin_vel_x, lin_vel_y, ang_vel_z。
+self.robot:由 cfg.asset_name 找到的机器人 articulation,来自 env.scene[cfg.asset_name]。
 self.robot.data.root_pos_w:机器人 base/root 在世界系的位置。
 env.scene.env_origins:每个并行环境的原点。rough terrain 下它通常对应每个 terrain tile 的中心/起点参考。
 self._env.step_dt:RL 环境一步的时间，也就是 policy/control step,不是单个 physics substep。
@@ -538,3 +539,478 @@ class GoStyleLevelVelocityCommandCfg(UniformVelocityCommandCfg):
     limit_vel_y: tuple[int, ...] = (-1, 1)
     limit_vel_yaw: tuple[int, ...] = (-1, 0, 1)
     limit_vel_invert_when_continuous: bool = True
+
+
+class ExtremeParkourCommand(CommandTerm):
+    """Waypoint navigation command for the Extreme Parkour terrain."""
+
+    cfg: ExtremeParkourCommandCfg
+
+    def __init__(self, cfg: ExtremeParkourCommandCfg, env: ManagerBasedRLEnv,) -> None:
+        super().__init__(cfg, env)
+
+        if cfg.num_waypoints <= 1:
+            raise ValueError(
+                f"num_waypoints must be greater than one, got {cfg.num_waypoints}."
+            )
+        if cfg.reach_threshold <= 0.0:
+            raise ValueError(
+                f"reach_threshold must be positive, got {cfg.reach_threshold}."
+            )
+        if cfg.reach_hold_time <= 0.0:
+            raise ValueError(
+                f"reach_hold_time must be positive, got {cfg.reach_hold_time}."
+            )
+        if cfg.forward_speed_range[0] > cfg.forward_speed_range[1]:
+            raise ValueError(
+                "forward_speed_range lower bound must not exceed upper bound: "
+                f"{cfg.forward_speed_range}."
+            )
+
+        self.robot: Articulation = env.scene[cfg.asset_name]
+        self.terrain = env.scene.terrain
+
+        required_terrain_attributes = (
+            "waypoints_grid",
+            "terrain_class_grid",
+            "difficulty_grid",
+            "terrain_levels",
+            "terrain_types",
+        )
+
+        missing_attributes = [
+            name
+            for name in required_terrain_attributes
+            if not hasattr(self.terrain, name)
+        ]
+        if missing_attributes:
+            raise RuntimeError(
+                "ExtremeParkourCommand requires metadata-aware terrain. "
+                f"Missing terrain attributes: {missing_attributes}."
+            )
+
+        waypoint_grid = self.terrain.waypoints_grid # type:ignore
+
+        if waypoint_grid.ndim != 4:
+            raise RuntimeError(
+                "waypoints_grid must have shape "
+                "[num_rows, num_cols, num_waypoints, 3], "
+                f"got {tuple(waypoint_grid.shape)}."
+            )
+        if waypoint_grid.shape[2] != cfg.num_waypoints:
+            raise RuntimeError(
+                f"Expected {cfg.num_waypoints} waypoints per route, "
+                f"got {waypoint_grid.shape[2]}."
+            )
+        if waypoint_grid.shape[3] != 3:
+            raise RuntimeError(
+                "Each waypoint must contain xyz coordinates, "
+                f"got final dimension {waypoint_grid.shape[3]}."
+            )
+
+        self.route_waypoints_w = torch.zeros(
+            self.num_envs,
+            cfg.num_waypoints,
+            3,
+            device=self.device,
+            dtype=torch.float32,
+        )
+
+        # Index range is [0, num_waypoints].
+        # num_waypoints means that all waypoints have been completed.
+        self.waypoint_index = torch.zeros(
+            self.num_envs,
+            device=self.device,
+            dtype=torch.long,
+        )
+
+        self.reach_time = torch.zeros(
+            self.num_envs,
+            device=self.device,
+            dtype=torch.float32,
+        )
+
+        self.route_complete = torch.zeros(
+            self.num_envs,
+            device=self.device,
+            dtype=torch.bool,
+        )
+
+        # Current and next waypoint positions in world coordinates.
+        self.current_waypoint_w = torch.zeros(
+            self.num_envs,
+            3,
+            device=self.device,
+        )
+
+        self.next_waypoint_w = torch.zeros_like(
+            self.current_waypoint_w
+        )
+
+        # Vectors from the robot to the waypoint in world xy coordinates.
+        self.target_pos_rel_w = torch.zeros(
+            self.num_envs,
+            2,
+            device=self.device,
+        )
+        self.next_target_pos_rel_w = torch.zeros_like(
+            self.target_pos_rel_w
+        )
+
+        self.target_direction_w = torch.zeros_like(
+            self.target_pos_rel_w
+        )
+
+        self.next_target_direction_w = torch.zeros_like(
+            self.next_target_pos_rel_w
+        )
+
+        self.distance_to_waypoint = torch.zeros(
+            self.num_envs,
+            device=self.device,
+        )
+
+        # World-frame target headings.
+        self.target_yaw_w = torch.zeros(
+            self.num_envs,
+            device=self.device,
+        )
+        self.next_target_yaw_w = torch.zeros_like(
+            self.target_yaw_w
+        )
+
+        # Heading errors relative to the Go2 base heading.
+        self.heading_error = torch.zeros(
+            self.num_envs,
+            device=self.device,
+        )
+        self.next_heading_error = torch.zeros_like(
+            self.heading_error
+        )
+
+        self.forward_speed = torch.zeros(
+            self.num_envs,
+            device=self.device,
+        )
+
+        self.terrain_level = torch.zeros(
+            self.num_envs,
+            device=self.device,
+            dtype=torch.long,
+        )
+        self.terrain_type = torch.zeros_like(
+            self.terrain_level
+        )
+        self.terrain_class = torch.zeros_like(
+            self.terrain_level
+        )
+        self.difficulty = torch.zeros(
+            self.num_envs,
+            device=self.device,
+        )
+
+        self._command = torch.zeros(
+            self.num_envs,
+            8,
+            device=self.device,
+            dtype=torch.float32,
+        )
+
+        self.metrics["distance_to_waypoint"] = torch.zeros(
+            self.num_envs,
+            device=self.device,
+        )
+        self.metrics["waypoint_progress"] = torch.zeros(
+            self.num_envs,
+            device=self.device,
+        )
+        self.metrics["route_complete"] = torch.zeros(
+            self.num_envs,
+            device=self.device,
+        )
+        self.metrics["terrain_level"] = torch.zeros(
+            self.num_envs,
+            device=self.device,
+        )
+        self.metrics["difficulty"] = torch.zeros(
+            self.num_envs,
+            device=self.device,
+        )
+
+        all_env_ids = torch.arange(
+            self.num_envs,
+            device=self.device,
+            dtype=torch.long,
+        )
+        self._resample_command(all_env_ids) # type:ignore
+        self.time_left[:] = cfg.resampling_time_range[1]
+
+    @property
+    def command(self) -> torch.Tensor:
+        return self._command
+
+    def _synchronize_route_assignment(self) -> None:
+        """Reload routes whose terrain level or terrain type has changed."""
+        current_levels = self.terrain.terrain_levels # type:ignore
+        current_types = self.terrain.terrain_types   # type:ignore
+        # curriculum change terrain_levels, thus terrain_type change
+        assignment_changed = (self.terrain_level != current_levels) | (self.terrain_type != current_types)
+
+        changed_env_ids = assignment_changed.nonzero(as_tuple=False).flatten()
+
+        if changed_env_ids.numel() > 0:
+            self._resample_command(changed_env_ids) #type:ignore
+
+
+    def _refresh_waypoint_buffers(self) -> None:
+        env_ids = torch.arange(self.num_envs, device=self.device, dtype=torch.long,)
+
+        current_indices = torch.clamp(self.waypoint_index, min=0, max=self.cfg.num_waypoints - 1,)
+
+        next_indices = torch.clamp(current_indices + 1, min=0, max=self.cfg.num_waypoints - 1,)
+
+        self.current_waypoint_w[:] = self.route_waypoints_w[env_ids, current_indices,]
+
+        self.next_waypoint_w[:] = self.route_waypoints_w[env_ids, next_indices,]
+
+    def _update_navigation_geometry(self) -> None:
+
+        root_xy_w = self.robot.data.root_pos_w[:, :2]
+
+        self.target_pos_rel_w[:] = self.current_waypoint_w[:, :2] - root_xy_w
+
+        self.next_target_pos_rel_w[:] = self.next_waypoint_w[:, :2] - root_xy_w
+
+        self.distance_to_waypoint[:] = torch.linalg.norm(self.target_pos_rel_w, dim = 1)
+
+        target_norm = torch.linalg.vector_norm(self.target_pos_rel_w, dim=1, keepdim=True,)
+
+        next_target_norm = torch.linalg.vector_norm(self.next_target_pos_rel_w, dim=1, keepdim=True,)
+
+        self.target_direction_w[:] = self.target_pos_rel_w / target_norm.clamp_min(1.0e-6)
+
+        self.next_target_direction_w[:] = self.next_target_pos_rel_w / next_target_norm.clamp_min(1.0e-6)
+
+        self.target_yaw_w[:] = torch.atan2(self.target_direction_w[:, 1], self.target_direction_w[:, 0])
+
+        self.next_target_yaw_w[:] = torch.atan2(self.next_target_direction_w[:, 1], self.next_target_direction_w[:, 0])
+
+        robot_yaw_w = self.robot.data.heading_w
+
+        self.heading_error[:] = math_utils.wrap_to_pi(self.target_yaw_w - robot_yaw_w)
+
+        self.next_heading_error[:] = math_utils.wrap_to_pi(self.next_target_yaw_w- robot_yaw_w)
+
+    def _write_command_tensor(self) -> None:
+        self._command[:, 0] = 0.0
+        self._command[:, 1] = self.heading_error
+        self._command[:, 2] = self.next_heading_error
+        self._command[:, 3:5] = 0.0
+        self._command[:, 5] = self.forward_speed
+
+        is_demo = (self.terrain_class == self.cfg.parkour_flat_terrain_class)
+        self._command[:, 6] = (~is_demo).float()
+        self._command[:, 7] = is_demo.float()
+
+    def _resample_command(self, env_ids: Sequence[int],) -> None:
+        env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long,) # type:ignore
+        if env_ids.numel() == 0: #type:ignore
+            return
+
+        # self.terrain.waypoints_grid: [num_rows, num_cols, num_waypoints, xyz]
+        # self.terrain.terrain_levels[env_ids] 表示每个并行环境当前被分配到第几行地形
+        # self.terrain.terrain_types[env_ids] 表示实际表示地形网格的列编号
+        terrain_levels = self.terrain.terrain_levels[env_ids] # type:ignore
+        terrain_types = self.terrain.terrain_types[env_ids]   # type:ignore
+
+        # Save the terrain assignment corresponding to the cached route.
+        self.terrain_level[env_ids] = terrain_levels
+        self.terrain_type[env_ids] = terrain_types
+
+        self.route_waypoints_w[env_ids] = (self.terrain.waypoints_grid[terrain_levels,terrain_types,])      # type:ignore
+        # terrain_class：这一列属于五大类中的哪一类，范围 0～4                                                    # type:ignore
+        self.terrain_class[env_ids] = (self.terrain.terrain_class_grid[terrain_levels, terrain_types,])     # type:ignore
+        self.difficulty[env_ids] = (self.terrain.difficulty_grid[terrain_levels, terrain_types,])   # type:ignore
+
+        self.waypoint_index[env_ids] = 0
+        self.reach_time[env_ids] = 0.0
+        self.route_complete[env_ids] = False
+
+        speed_min, speed_max = self.cfg.forward_speed_range
+        self.forward_speed[env_ids] = (speed_min + (speed_max - speed_min) * torch.rand(len(env_ids), device=self.device))
+
+        self._refresh_waypoint_buffers()
+        self._update_navigation_geometry()
+        self._write_command_tensor()
+
+    def _update_command(self) -> None:
+        """Advance waypoint indices after a continuous hold inside the target."""
+        self._synchronize_route_assignment()
+        self._refresh_waypoint_buffers()
+        self._update_navigation_geometry()
+
+        active = ~self.route_complete
+        inside_target =  self.distance_to_waypoint < self.cfg.reach_threshold
+
+        holding_target = active & inside_target
+        # Resetting to zero whenever the robot leaves the target radius makes
+        # reach_hold_time a continuous hold rather than accumulated visits.
+        self.reach_time[:] = torch.where(holding_target, self.reach_time + self._env.step_dt, torch.zeros_like(self.reach_time),)
+
+        advance = active & (self.reach_time >= self.cfg.reach_hold_time - 1.0e-6)
+
+        if torch.any(advance):
+           self.waypoint_index[advance] += 1
+           # Waypoint == 8的含义是 8 个 waypoint 已全部完成
+           self.waypoint_index.clamp_(max=self.cfg.num_waypoints)
+           self.reach_time[advance] = 0.0
+           self.route_complete[:] = self.waypoint_index >= self.cfg.num_waypoints
+
+           # Immediately expose the new target in the same policy step.
+           self._refresh_waypoint_buffers()
+           self._update_navigation_geometry()
+
+        self._write_command_tensor()
+
+    def _update_metrics(self) -> None:
+        """Update values logged when an environment resets."""
+
+        self.metrics["distance_to_waypoint"][:] = (
+            self.distance_to_waypoint
+        )
+        self.metrics["waypoint_progress"][:] = (
+            self.waypoint_index.float()
+            / float(self.cfg.num_waypoints)
+        )
+        self.metrics["route_complete"][:] = (
+            self.route_complete.float()
+        )
+        self.metrics["terrain_level"][:] = (
+            self.terrain_level.float()
+        )
+        self.metrics["difficulty"][:] = self.difficulty
+
+    def _set_debug_vis_impl(self, debug_vis: bool,) -> None:
+        """Create waypoint markers and toggle their visibility."""
+
+        if debug_vis:
+            if not hasattr(self, "current_waypoint_visualizer",):
+                self.current_waypoint_visualizer = (
+                    VisualizationMarkers(
+                        self.cfg.current_waypoint_visualizer_cfg
+                    )
+                )
+                self.next_waypoint_visualizer = (
+                    VisualizationMarkers(
+                        self.cfg.next_waypoint_visualizer_cfg
+                    )
+                )
+
+            self.current_waypoint_visualizer.set_visibility(True)
+            self.next_waypoint_visualizer.set_visibility(True)
+
+        else:
+            if hasattr(self, "current_waypoint_visualizer",):
+                self.current_waypoint_visualizer.set_visibility(False)
+                self.next_waypoint_visualizer.set_visibility(False)
+
+    # 启用调试显示后，IsaacLab 会将该方法订阅到仿真应用的 post-update event。
+    def _debug_vis_callback(self, event,) -> None:
+        """Update current and next waypoint markers."""
+
+        del event
+
+        if not self.robot.is_initialized:
+            return
+
+        current_marker_positions = self.current_waypoint_w.clone()
+
+        next_marker_positions = self.next_waypoint_w.clone()
+
+        current_marker_positions[:, 2] += self.cfg.marker_height_offset
+
+        next_marker_positions[:, 2] += self.cfg.marker_height_offset
+
+        current_marker_scales = torch.ones(self.num_envs, 3, device=self.device,)
+
+        current_marker_scales[self.route_complete] = 0.0
+
+        has_next_waypoint = (
+            ~self.route_complete
+            & (self.waypoint_index < self.cfg.num_waypoints - 1)
+        )
+
+        next_marker_scales = torch.zeros(self.num_envs, 3, device=self.device,)
+
+        next_marker_scales[has_next_waypoint] = 1.0
+
+        self.current_waypoint_visualizer.visualize(
+            translations=current_marker_positions,
+            scales=current_marker_scales,
+        )
+
+        self.next_waypoint_visualizer.visualize(
+            translations=next_marker_positions,
+            scales=next_marker_scales,
+        )
+
+@configclass
+class ExtremeParkourCommandCfg(CommandTermCfg):
+    """Configuration for the Extreme Parkour waypoint command."""
+
+    class_type: type = ExtremeParkourCommand
+
+    # Route changes are controlled by episode reset and waypoint switching,
+    # not by CommandTerm's periodic resampling timer.
+    resampling_time_range: tuple[float, float] = (1.0e9, 1.0e9,)
+
+    asset_name: str = "robot"
+    num_waypoints: int = 8
+
+    reach_threshold: float = 0.2
+    reach_hold_time: float = 0.1
+
+    forward_speed_range: tuple[float, float] = (
+        0.3,
+        0.8,
+    )
+
+    parkour_flat_terrain_class: int = 2
+
+    marker_height_offset: float = 0.12
+
+    current_waypoint_visualizer_cfg: VisualizationMarkersCfg = (
+    VisualizationMarkersCfg(
+        prim_path=(
+            "/Visuals/Command/"
+            "extreme_parkour_current_waypoint"
+        ),
+        markers={
+            "sphere": sim_utils.SphereCfg( # type:ignore
+                radius=0.10,
+                visual_material=sim_utils.PreviewSurfaceCfg( # type:ignore
+                    diffuse_color=(0.0, 1.0, 0.0),
+                    roughness=0.8,
+                        ),
+                    ),
+                },
+            )
+        )
+
+    next_waypoint_visualizer_cfg: VisualizationMarkersCfg = (
+    VisualizationMarkersCfg(
+        prim_path=(
+            "/Visuals/Command/"
+            "extreme_parkour_next_waypoint"
+        ),
+        markers={
+            "sphere": sim_utils.SphereCfg( # type:ignore
+                radius=0.07,
+                visual_material=sim_utils.PreviewSurfaceCfg( # type:ignore
+                    diffuse_color=(0.0, 0.35, 1.0),
+                    roughness=0.8,
+                        ),
+                    ),
+                },
+            )
+        )
